@@ -6,9 +6,9 @@ interface ParticleCanvasProps {
   imageSrc?: string | null;
 }
 
-// Adjusted counts: More density for flower, less for background
-const FLOWER_COUNT = 28000;
-const BG_COUNT = 4000;
+// Adjusted counts: Significantly higher density for "HD" look
+const FLOWER_COUNT = 45000;
+const BG_COUNT = 5000;
 const PARTICLE_COUNT = FLOWER_COUNT + BG_COUNT;
 
 // HUD Constants
@@ -93,29 +93,23 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
     // Palette
     const colorPod = new THREE.Color('#FFD700'); // Gold for seeds
     const colorPodBase = new THREE.Color('#9ACD32'); // YellowGreen for pod base
-    const colorPetalBase = new THREE.Color('#FFFAFA'); // Snow white base
+    const colorPetalBase = new THREE.Color('#F8F8FF'); // GhostWhite base
     const colorPetalTip = new THREE.Color('#FF1493'); // Deep Pink tip
     const colorPetalMid = new THREE.Color('#FF69B4'); // Hot Pink mid
 
     let pIndex = 0;
 
-    // 1. THE POD (Lotus Seed Head) - Approx 15% of flower particles
+    // 1. THE POD (Lotus Seed Head) - Approx 12% of flower particles
     // Solid flat top + tapered cup
-    const podBudget = Math.floor(FLOWER_COUNT * 0.15);
+    const podBudget = Math.floor(FLOWER_COUNT * 0.12);
     for (let i = 0; i < podBudget; i++) {
-        // Golden angle spiral for seeds on top
-        const theta = i * 2.39996;
-        const t = i / podBudget;
-        
-        // Shape: A truncated cone (Cup)
-        // Top surface (Seeds)
-        const topRadius = 0.5;
-        const bottomRadius = 0.2;
-        const podHeight = 0.5;
-
+        // Top surface
+        const topRadius = 0.45;
+        const bottomRadius = 0.15;
+        const podHeight = 0.4;
         let x, y, z, c;
 
-        if (Math.random() > 0.4) {
+        if (Math.random() > 0.35) {
              // Top Surface (Dense)
              const r = Math.sqrt(Math.random()) * topRadius;
              const angle = Math.random() * Math.PI * 2;
@@ -123,12 +117,11 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
              z = r * Math.sin(angle);
              y = podHeight / 2;
              
-             // Seeds texture (yellow dots)
-             if (Math.random() > 0.8) c = colorPod;
+             if (Math.random() > 0.85) c = colorPod; // Seeds
              else c = colorPodBase;
         } else {
              // Side Surface
-             const h = Math.random(); // 0 to 1
+             const h = Math.random(); 
              const r = bottomRadius + (topRadius - bottomRadius) * h;
              const angle = Math.random() * Math.PI * 2;
              x = r * Math.cos(angle);
@@ -139,32 +132,32 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
 
         const ix = pIndex * 3;
         positions[ix] = x;
-        positions[ix+1] = y + 0.2; // Lift slightly
+        positions[ix+1] = y + 0.15; 
         positions[ix+2] = z;
 
         colors[ix] = c.r;
         colors[ix+1] = c.g;
         colors[ix+2] = c.b;
 
-        drift[ix] = (Math.random()-0.5) * 2;
-        drift[ix+1] = (Math.random()-0.5) * 2;
-        drift[ix+2] = (Math.random()-0.5) * 2;
+        drift[ix] = (Math.random()-0.5) * 1.5;
+        drift[ix+1] = (Math.random()-0.5) * 1.5;
+        drift[ix+2] = (Math.random()-0.5) * 1.5;
         pIndex++;
     }
 
-    // 2. THE PETALS - Detailed Layering
-    // We define layers with specific petal counts and shapes
+    // 2. THE PETALS - High Definition Layering
+    // Increased counts per layer, tighter jitter for sharper edges
     const layers = [
-        // Inner Bud (Tight, standing up)
-        { count: 6,  radiusBase: 0.6, length: 1.2, tilt: 0.2, width: 0.5, curve: 0.2, yOff: 0.0 },
-        // Mid Layer 1 (Opening)
-        { count: 9,  radiusBase: 0.8, length: 1.5, tilt: 0.5, width: 0.7, curve: 0.5, yOff: 0.1 },
-        // Mid Layer 2 (Blooming)
-        { count: 12, radiusBase: 1.0, length: 1.8, tilt: 0.9, width: 0.9, curve: 0.8, yOff: 0.2 },
-        // Outer Layer 1 (Wide)
-        { count: 15, radiusBase: 1.2, length: 2.1, tilt: 1.2, width: 1.1, curve: 1.0, yOff: 0.3 },
-        // Outer Layer 2 (Base sepals/petals)
-        { count: 20, radiusBase: 1.4, length: 2.2, tilt: 1.5, width: 1.2, curve: 0.5, yOff: 0.35 },
+        // Inner Bud 
+        { count: 6,  radiusBase: 0.5, length: 1.1, tilt: 0.15, width: 0.45, curve: 0.2, yOff: 0.0 },
+        // Mid Layer 1 
+        { count: 9,  radiusBase: 0.7, length: 1.4, tilt: 0.45, width: 0.65, curve: 0.4, yOff: 0.1 },
+        // Mid Layer 2 
+        { count: 12, radiusBase: 0.9, length: 1.7, tilt: 0.8, width: 0.85, curve: 0.7, yOff: 0.18 },
+        // Outer Layer 1 
+        { count: 18, radiusBase: 1.1, length: 2.0, tilt: 1.1, width: 1.0, curve: 0.9, yOff: 0.28 },
+        // Outer Layer 2 
+        { count: 24, radiusBase: 1.3, length: 2.2, tilt: 1.4, width: 1.1, curve: 0.6, yOff: 0.35 },
     ];
 
     const petalBudget = FLOWER_COUNT - pIndex;
@@ -172,101 +165,85 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
 
     layers.forEach((layer, lIdx) => {
         for (let p = 0; p < layer.count; p++) {
-            // Angle of this specific petal center
-            // Add offset based on layer to interleave petals (Phyllotaxis-ish)
             const petalCenterAngle = (p / layer.count) * Math.PI * 2 + (lIdx * 0.5);
 
             for (let k = 0; k < particlesPerPetal; k++) {
                 if (pIndex >= FLOWER_COUNT) break;
 
-                // Parametric Petal Math
-                // u: horizontal position within petal (-0.5 to 0.5)
-                // v: vertical position along petal length (0 to 1)
-                
-                // We distribute more particles near the edges and center line for definition
                 let u = (Math.random() - 0.5);
                 let v = Math.random();
                 
-                // Shape function: Width varies by height
-                // Taper at bottom (0), widen at middle, taper at top (1)
+                // Shape: Use power function to keep the petal body fuller, sharper tip
                 const shapeWidth = Math.sin(v * Math.PI) * layer.width;
                 
-                // Actual local coordinates
-                // Add some "thickness" noise to u
-                const localX = u * shapeWidth + (Math.random()-0.5) * 0.05; 
+                // REDUCED NOISE for sharper edges (was 0.05)
+                const localX = u * shapeWidth + (Math.random()-0.5) * 0.015; 
                 const localY = v * layer.length;
-                const localZ = (Math.random() - 0.5) * 0.05; // Thickness
 
-                // Curve logic: Bend the petal outward
-                // The higher the v, the more it pushes out (Z axis in local petal space)
-                const curveZ = -Math.pow(v, 1.5) * layer.curve;
+                // Edge Curl
+                const edgeCurl = -Math.pow(Math.abs(u * 2), 2.5) * 0.15; 
+                // Very thin petals (z-noise reduced)
+                const localZ = (Math.random() - 0.5) * 0.02 + edgeCurl; 
+
+                const curveZ = -Math.pow(v, 1.4) * layer.curve;
 
                 // Rotation Matrices
-                // 1. Tilt (Open the flower) - Rotate around X
                 const cosT = Math.cos(layer.tilt);
                 const sinT = Math.sin(layer.tilt);
                 let y1 = localY * cosT - (localZ + curveZ) * sinT;
                 let z1 = localY * sinT + (localZ + curveZ) * cosT;
 
-                // 2. Place at radius
                 z1 += layer.radiusBase;
 
-                // 3. Rotate around Y (Petal placement ring)
                 const cosA = Math.cos(petalCenterAngle);
                 const sinA = Math.sin(petalCenterAngle);
                 
                 const finalX = localX * cosA + z1 * sinA;
                 const finalZ = -localX * sinA + z1 * cosA;
-                const finalY = y1 + layer.yOff - 1.0; // Center vertically
+                const finalY = y1 + layer.yOff - 0.9; 
 
                 const ix = pIndex * 3;
                 positions[ix] = finalX;
                 positions[ix+1] = finalY;
                 positions[ix+2] = finalZ;
 
-                // Color Gradient Logic
+                // Color Gradient 
                 let c = new THREE.Color();
-                // Base is white, Middle is pink, Tip is deep pink
-                if (v < 0.3) {
+                if (v < 0.25) {
                     c.copy(colorPetalBase);
-                } else if (v < 0.7) {
-                    c.copy(colorPetalBase).lerp(colorPetalMid, (v - 0.3) * 2.5);
+                } else if (v < 0.65) {
+                    c.copy(colorPetalBase).lerp(colorPetalMid, (v - 0.25) * 2.5);
                 } else {
-                    c.copy(colorPetalMid).lerp(colorPetalTip, (v - 0.7) * 3.3);
+                    c.copy(colorPetalMid).lerp(colorPetalTip, (v - 0.65) * 2.8);
                 }
                 
-                // Add some slight variation
-                c.offsetHSL(0, 0, (Math.random() - 0.5) * 0.1);
-
                 colors[ix] = c.r;
                 colors[ix+1] = c.g;
                 colors[ix+2] = c.b;
 
-                // Drift vectors
-                drift[ix] = (Math.random() - 0.5) * 6;
-                drift[ix+1] = (Math.random() - 0.5) * 6;
-                drift[ix+2] = (Math.random() - 0.5) * 6;
+                // Drift vectors (Slightly reduced for tighter form)
+                drift[ix] = (Math.random() - 0.5) * 5;
+                drift[ix+1] = (Math.random() - 0.5) * 5;
+                drift[ix+2] = (Math.random() - 0.5) * 5;
 
                 pIndex++;
             }
         }
     });
 
-    // 3. BACKGROUND (Stars/Dust)
-    // Reduce range to keep them closer to the flower context, but sparse
+    // 3. BACKGROUND 
     for (let i = pIndex; i < PARTICLE_COUNT; i++) {
         const ix = i * 3;
-        const range = 20; // Slightly tighter background
+        const range = 25; 
         positions[ix] = (Math.random() - 0.5) * range;
         positions[ix+1] = (Math.random() - 0.5) * range;
         positions[ix+2] = (Math.random() - 0.5) * range;
 
         bgSpeeds[ix] = (Math.random() - 0.5) * 0.01;
-        bgSpeeds[ix+1] = (Math.random() * 0.02) + 0.005; // Upward drift
+        bgSpeeds[ix+1] = (Math.random() * 0.02) + 0.005; 
         bgSpeeds[ix+2] = (Math.random() - 0.5) * 0.01;
 
-        // Dim colors
-        const c = colorPetalMid.clone().multiplyScalar(0.3 + Math.random() * 0.2);
+        const c = colorPetalMid.clone().multiplyScalar(0.4 + Math.random() * 0.3);
         colors[ix] = c.r;
         colors[ix+1] = c.g;
         colors[ix+2] = c.b;
@@ -282,10 +259,11 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
     scene.fog = new THREE.FogExp2(0x000000, 0.03); 
     sceneRef.current = scene;
 
-    // Zoomed in slightly (Z: 4.5 -> 3.8) for better screen fill
+    // Adjusted camera for new density
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.position.set(0, 2.5, 3.8); 
-    camera.lookAt(0, 0.5, 0); 
+    camera.position.set(0, 2.2, 3.5); 
+    camera.lookAt(0, 0.4, 0); 
+    cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -313,10 +291,10 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
     geometryRef.current = geometry;
 
     const material = new THREE.PointsMaterial({
-      size: 0.035, // Finer particles
+      size: 0.028, // Smaller particles for smoother, denser look
       vertexColors: true,
       transparent: true,
-      opacity: 0.9,
+      opacity: 0.95,
       blending: THREE.AdditiveBlending, 
       depthWrite: false,
     });
@@ -380,7 +358,7 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
           
           ctx.fillStyle = "#FFF";
           ctx.font = "bold 14px 'Courier New'";
-          ctx.fillText("SYSTEM MONITOR_V1.1", 15, 30);
+          ctx.fillText("SYSTEM MONITOR_V1.2", 15, 30);
           ctx.fillStyle = COLOR_ACCENT;
           ctx.fillRect(15, 40, 220, 2);
 
@@ -515,7 +493,6 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
         const bgSpeeds = bgSpeedsRef.current;
         const factor = handFactorRef.current; 
 
-        // Adjusted dynamics for the dense flower
         const scaleStrength = 1 + factor * 2.0; 
         const spreadStrength = factor * 2.5; 
 
@@ -547,7 +524,7 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
                 current[iy] += bgSpeeds[iy];
                 current[iz] += bgSpeeds[iz];
 
-                const range = 20;
+                const range = 25;
                 if (current[iy] > range) current[iy] = -range;
                 if (current[ix] > range) current[ix] = -range; if (current[ix] < -range) current[ix] = range;
                 if (current[iz] > range) current[iz] = -range; if (current[iz] < -range) current[iz] = range;
