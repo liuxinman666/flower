@@ -30,7 +30,7 @@ const App: React.FC = () => {
         model: 'gemini-2.5-flash-image',
         contents: {
           parts: [
-            { text: 'A single, magnificent Lotus flower made of glowing blue and purple holographic particles. The petals are translucent, crystalline, and ethereal. Deep black background. Cyber-fantasy style, bioluminescent, 8k resolution, sharp focus, digital art.' }
+            { text: 'A centered, symmetrical Lotus flower composed entirely of soft glowing particles. Colors: Pastel Pink, Soft Yellow, and Azure Blue. Deep black background. The petals are delicate, translucent, and ethereal. High contrast, 8k resolution, macro particle render, bioluminescent, dreamlike texture.' }
           ]
         }
       });
@@ -72,21 +72,21 @@ const App: React.FC = () => {
           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center p-8 bg-black/70 backdrop-blur-xl rounded-3xl border border-white/10 shadow-2xl max-w-md w-full ring-1 ring-white/5">
             <div className="relative inline-block mb-6">
               <Camera className="w-20 h-20 text-white/90" strokeWidth={1.5} />
-              <Sparkles className="absolute -top-2 -right-2 w-8 h-8 text-cyan-300 animate-pulse" />
+              <Sparkles className="absolute -top-2 -right-2 w-8 h-8 text-pink-300 animate-pulse" />
             </div>
             
-            <h1 className="text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-300 to-cyan-400 mb-3 tracking-tight">
+            <h1 className="text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r from-pink-400 via-yellow-200 to-blue-400 mb-3 tracking-tight">
               HoloLotus FX
             </h1>
             <p className="text-gray-400 mb-8 leading-relaxed font-light">
-              Generate a mystical holographic lotus or upload your own image. Experience the breathing particle simulation.
+              Generate a mystical particle lotus or upload your own. Experience the folding and breathing simulation.
             </p>
             
             <div className="flex flex-col gap-4">
               <button 
                 onClick={handleGenerateImage}
                 disabled={isGenerating}
-                className="group relative flex items-center justify-center px-8 py-4 overflow-hidden font-bold rounded-2xl transition-all duration-300 bg-gradient-to-r from-blue-600 via-purple-600 to-cyan-600 hover:shadow-[0_0_40px_-10px_rgba(100,200,255,0.5)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed"
+                className="group relative flex items-center justify-center px-8 py-4 overflow-hidden font-bold rounded-2xl transition-all duration-300 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 hover:shadow-[0_0_40px_-10px_rgba(255,182,193,0.5)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed"
               >
                 {isGenerating ? (
                   <span className="flex items-center gap-2">
@@ -128,11 +128,11 @@ const App: React.FC = () => {
                 className="p-3 hover:bg-white/10 rounded-full transition-colors group" 
                 title="Generate New"
               >
-                {isGenerating ? <Loader2 className="w-6 h-6 animate-spin text-blue-400"/> : <Sparkles className="w-6 h-6 text-blue-400 group-hover:scale-110 transition-transform" />}
+                {isGenerating ? <Loader2 className="w-6 h-6 animate-spin text-blue-400"/> : <Sparkles className="w-6 h-6 text-pink-400 group-hover:scale-110 transition-transform" />}
              </button>
              
              <label className="cursor-pointer p-3 hover:bg-white/10 rounded-full transition-colors group" title="Upload Image">
-              <Upload className="w-6 h-6 text-purple-300 group-hover:scale-110 transition-transform" />
+              <Upload className="w-6 h-6 text-yellow-200 group-hover:scale-110 transition-transform" />
               <input 
                 type="file" 
                 accept="image/*" 
@@ -160,8 +160,8 @@ const App: React.FC = () => {
           <div className="absolute right-0 top-14 w-72 p-6 bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl text-sm text-gray-300 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0 duration-300 pointer-events-none shadow-2xl">
             <h3 className="text-white font-bold mb-2">Interactions</h3>
             <ul className="list-disc list-inside space-y-1 text-white/70">
+              <li>Flower folds and unfolds slowly</li>
               <li>Mouse over particles to push them</li>
-              <li>Flower breathes (opens/closes) slowly</li>
               <li>Camera feed acts as the live background</li>
             </ul>
           </div>

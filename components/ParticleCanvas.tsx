@@ -57,8 +57,9 @@ class Particle {
     this.x = Math.random() * canvasWidth;
     this.y = Math.random() * canvasHeight;
     
-    // REDUCED SIZE for larger gaps (0.5 to 2.0 instead of 1.0 to 3.0)
-    this.baseSize = Math.random() * 1.5 + 0.5; 
+    // FINER SIZE for higher density (gap=2)
+    // Range: 0.5px to 1.5px
+    this.baseSize = Math.random() * 1.0 + 0.5; 
     this.size = this.baseSize;
     this.color = color;
     
@@ -128,10 +129,12 @@ class Particle {
       this.history.shift();
     }
 
-    // 2. GLOBAL FLOWER BLOOM (Open/Close)
-    // Oscillate between closing (0.9 scale) and opening (1.0 scale)
-    const bloomPhase = Math.sin(time * 0.2); 
-    const bloomScale = 0.95 + (bloomPhase * 0.05);
+    // 2. FLOWER FOLDING/UNFOLDING EFFECT
+    // We want the flower to slowly close (fold) and open (unfold).
+    // Use a slow sine wave for the cycle.
+    // Scale ranges from 0.85 (folded/closed) to 1.05 (open/bloomed).
+    const bloomCycle = Math.sin(time * 2.0); // Adjust frequency for the slow motion time
+    const bloomScale = 0.85 + (bloomCycle * 0.20); 
 
     const centerX = canvasWidth / 2;
     const centerY = canvasHeight / 2;
@@ -139,8 +142,20 @@ class Particle {
     const relativeX = this.originX - centerX;
     const relativeY = this.originY - centerY;
     
-    const targetX = centerX + (relativeX * bloomScale);
-    const targetY = centerY + (relativeY * bloomScale);
+    // Add a slight rotation spiral effect when closing to simulate folding petals
+    // When scale is small (closed), rotate more.
+    const rotationStrength = (1.0 - bloomScale) * 0.5; 
+    const currentDist = Math.sqrt(relativeX * relativeX + relativeY * relativeY);
+    const currentAngle = Math.atan2(relativeY, relativeX);
+    
+    // Particles further out rotate slightly more
+    const newAngle = currentAngle + rotationStrength * (currentDist / 300);
+
+    const rotatedX = Math.cos(newAngle) * currentDist;
+    const rotatedY = Math.sin(newAngle) * currentDist;
+    
+    const targetX = centerX + (rotatedX * bloomScale);
+    const targetY = centerY + (rotatedY * bloomScale);
 
     // Mouse Interaction
     this.dx = mouse.x - this.x;
@@ -187,7 +202,8 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = ({ imageSrc }) => {
   const mouseRef = useRef({ x: 0, y: 0, radius: 100 });
   const timeRef = useRef(0);
 
-  const desaturateColor = (r: number, g: number, b: number, factor: number = 0.4): string => {
+  const desaturateColor = (r: number, g: number, b: number, factor: number = 0.6): string => {
+    // Increased default desaturation factor to 0.6 for more "pastel/faded" look
     const avg = (r + g + b) / 3;
     const newR = Math.floor(r * (1 - factor) + avg * factor);
     const newG = Math.floor(g * (1 - factor) + avg * factor);
@@ -206,9 +222,9 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = ({ imageSrc }) => {
 
     ctx.drawImage(img, offsetX, offsetY, newWidth, newHeight);
     
-    // GAP INCREASED from 3 to 5
-    // This creates larger gaps between particles
-    const gap = 5; 
+    // GAP REDUCED from 3 to 2 for HIGH DENSITY
+    // This creates extremely rich detail
+    const gap = 2; 
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
 
@@ -227,10 +243,11 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = ({ imageSrc }) => {
           
           let color;
           
-          if (brightness > 220) {
+          if (brightness > 230) {
              color = '#FFFFFF'; 
           } else {
-             color = desaturateColor(r, g, b, 0.3);
+             // Apply desaturation here
+             color = desaturateColor(r, g, b, 0.6);
           }
 
           particlesRef.current.push(new Particle(x, y, color, width, height));
@@ -275,7 +292,8 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = ({ imageSrc }) => {
     const animate = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
-      timeRef.current += 0.005;
+      // SLOW MOTION: Reduced time increment from 0.005 to 0.0005 (10x slower)
+      timeRef.current += 0.0005;
 
       particlesRef.current.forEach(particle => {
         particle.update(mouseRef.current, timeRef.current, canvas.width, canvas.height);
