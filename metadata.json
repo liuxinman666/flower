@@ -1,0 +1,7 @@
+{
+  "name": "Dreamy Particle Flower",
+  "description": "A webcam-interactive experience that transforms flower images into a floating, dreamy particle system using pink, yellow, and blue hues.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
