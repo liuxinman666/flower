@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import WebcamBackground from './components/WebcamBackground';
 import ParticleCanvas from './components/ParticleCanvas';
-import { Upload, Camera, Info, Sparkles, Loader2 } from 'lucide-react';
+import { Upload, Camera, Info, Sparkles, Loader2, Hand } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 
 const App: React.FC = () => {
@@ -30,7 +29,7 @@ const App: React.FC = () => {
         model: 'gemini-2.5-flash-image',
         contents: {
           parts: [
-            { text: 'A centered, symmetrical Lotus flower composed entirely of soft glowing particles. Colors: Pastel Pink, Soft Yellow, and Azure Blue. Deep black background. The petals are delicate, translucent, and ethereal. High contrast, 8k resolution, macro particle render, bioluminescent, dreamlike texture.' }
+            { text: 'A majestic Lotus flower viewed from a slightly elevated 45-degree angle (3/4 perspective) to show depth and volume. The flower is blooming upwards, not flat. Colors: Pastel Pink, Soft Yellow, and Azure Blue. Deep black background. The petals are delicate, translucent, and ethereal. High contrast, 8k resolution, macro particle render, bioluminescent, dreamlike texture.' }
           ]
         }
       });
@@ -54,22 +53,20 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="relative w-full h-full overflow-hidden text-white font-sans selection:bg-pink-500 selection:text-white">
-      {/* 1. Webcam Layer (Background) */}
-      <WebcamBackground />
-
-      {/* 2. Particle Canvas Layer (Midground) */}
-      <div className="absolute inset-0 z-10 pointer-events-none">
+    <div className="relative w-full h-full overflow-hidden bg-black text-white font-sans selection:bg-pink-500 selection:text-white">
+      
+      {/* 1. Particle Canvas Layer (Main) */}
+      <div className="absolute inset-0 z-10">
         <ParticleCanvas imageSrc={imageSrc} />
       </div>
 
-      {/* 3. Interaction & UI Layer (Foreground) */}
+      {/* 2. Interaction & UI Layer (Foreground) */}
       <div 
         className={`absolute inset-0 z-20 transition-opacity duration-700 ${showUI ? 'opacity-100' : 'opacity-0 hover:opacity-100'}`}
       >
         {/* Header / Instructions */}
         {!imageSrc && (
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center p-8 bg-black/70 backdrop-blur-xl rounded-3xl border border-white/10 shadow-2xl max-w-md w-full ring-1 ring-white/5">
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center p-8 bg-black/70 backdrop-blur-xl rounded-3xl border border-white/10 shadow-2xl max-w-md w-full ring-1 ring-white/5 pointer-events-auto">
             <div className="relative inline-block mb-6">
               <Camera className="w-20 h-20 text-white/90" strokeWidth={1.5} />
               <Sparkles className="absolute -top-2 -right-2 w-8 h-8 text-pink-300 animate-pulse" />
@@ -79,7 +76,7 @@ const App: React.FC = () => {
               HoloLotus FX
             </h1>
             <p className="text-gray-400 mb-8 leading-relaxed font-light">
-              Generate a mystical particle lotus or upload your own. Experience the folding and breathing simulation.
+              Generate a mystical particle lotus or upload your own. Use your hand to control the bloom.
             </p>
             
             <div className="flex flex-col gap-4">
@@ -143,11 +140,20 @@ const App: React.FC = () => {
             
             <div className="h-6 w-px bg-white/20 mx-1"></div>
             
+            <div className="flex items-center gap-2 px-3">
+               <Hand className="w-4 h-4 text-cyan-300 animate-pulse" />
+               <span className="text-[10px] uppercase tracking-wider text-cyan-100/70">
+                 Interactive
+               </span>
+            </div>
+
+            <div className="h-6 w-px bg-white/20 mx-1"></div>
+
             <button 
               onClick={() => setShowUI(!showUI)}
               className="px-4 py-2 hover:bg-white/10 rounded-full transition-colors text-xs font-bold text-white/90 uppercase tracking-widest"
             >
-              {showUI ? 'Hide' : 'Show'}
+              Hide
             </button>
           </div>
         )}
@@ -158,11 +164,11 @@ const App: React.FC = () => {
             <Info className="w-5 h-5 text-white/60" />
           </div>
           <div className="absolute right-0 top-14 w-72 p-6 bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl text-sm text-gray-300 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0 duration-300 pointer-events-none shadow-2xl">
-            <h3 className="text-white font-bold mb-2">Interactions</h3>
+            <h3 className="text-white font-bold mb-2">Controls</h3>
             <ul className="list-disc list-inside space-y-1 text-white/70">
-              <li>Flower folds and unfolds slowly</li>
+              <li><span className="text-cyan-400">Open Hand</span>: Expand/Bloom</li>
+              <li><span className="text-pink-400">Close Fist</span>: Contract/Fold</li>
               <li>Mouse over particles to push them</li>
-              <li>Camera feed acts as the live background</li>
             </ul>
           </div>
         </div>
