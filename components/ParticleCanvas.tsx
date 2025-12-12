@@ -1,264 +1,60 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef } from 'react';
+import * as THREE from 'three';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
 interface ParticleCanvasProps {
-  imageSrc: string | null;
+  imageSrc?: string | null;
 }
 
-// ---------------------------
-// FALLING PETAL CLASS
-// ---------------------------
-class FallingPetal {
-  x: number;
-  y: number;
-  z: number;
-  size: number;
-  vy: number;
-  vx: number;
-  swayFreq: number;
-  swayAmp: number;
-  phase: number;
-  angle: number;
-  rotationSpeed: number;
-  flipAngle: number;
-  flipSpeed: number;
-  color: string;
-  opacity: number;
+// Adjusted counts: More density for flower, less for background
+const FLOWER_COUNT = 28000;
+const BG_COUNT = 4000;
+const PARTICLE_COUNT = FLOWER_COUNT + BG_COUNT;
 
-  constructor(canvasWidth: number, canvasHeight: number) {
-    this.x = 0;
-    this.y = 0;
-    this.z = 1;
-    this.size = 1;
-    this.vy = 0;
-    this.vx = 0;
-    this.swayFreq = 0;
-    this.swayAmp = 0;
-    this.phase = 0;
-    this.angle = 0;
-    this.rotationSpeed = 0;
-    this.flipAngle = 0;
-    this.flipSpeed = 0;
-    this.color = '#fff';
-    this.opacity = 1;
-    this.init(canvasWidth, canvasHeight, true);
-  }
+// HUD Constants
+const FONT_MONO = "10px 'Courier New', monospace";
+const COLOR_HUD_TEXT = "rgba(200, 255, 255, 0.9)";
+const COLOR_HUD_BG = "rgba(0, 10, 20, 0.6)";
+const COLOR_ACCENT = "#00BFFF";
+const COLOR_WARN = "#FFD700";
+const COLOR_SKELETON = "rgba(255, 255, 255, 0.8)"; 
 
-  init(width: number, height: number, randomY: boolean = false) {
-    this.x = Math.random() * width;
-    this.y = randomY ? Math.random() * height : -50 - Math.random() * 100;
-    this.z = Math.random() * 0.8 + 0.5; 
-    this.size = (Math.random() * 6 + 6) * this.z; 
-    const colors = ['#FFC0CB', '#FFB6C1', '#FF69B4', '#FFB7C5', '#FFE4E1'];
-    this.color = colors[Math.floor(Math.random() * colors.length)];
-    this.opacity = Math.random() * 0.4 + 0.4; 
-    this.vy = (Math.random() * 1.0 + 1.0) * this.z; 
-    this.vx = (Math.random() - 0.5) * 1.0; 
-    this.swayFreq = Math.random() * 0.003 + 0.001; 
-    this.swayAmp = (Math.random() * 1.5 + 0.5) * this.z;
-    this.phase = Math.random() * Math.PI * 2;
-    this.angle = Math.random() * Math.PI * 2;
-    this.rotationSpeed = (Math.random() - 0.5) * 0.02;
-    this.flipAngle = Math.random() * Math.PI;
-    this.flipSpeed = (Math.random() * 0.02 + 0.005);
-  }
-
-  update(width: number, height: number, time: number) {
-    const oscillation = Math.sin(time * this.swayFreq + this.phase);
-    const turbulence = Math.cos(time * this.swayFreq * 3) * 0.3;
-    const combinedSway = oscillation + turbulence;
-
-    this.x += this.vx + (combinedSway * this.swayAmp);
-    const dragFactor = Math.abs(combinedSway) * 0.5; 
-    const currentFallSpeed = Math.max(0.3, this.vy * (1 - dragFactor * 0.6));
-    this.y += currentFallSpeed;
-    this.angle += this.rotationSpeed + (oscillation * 0.002);
-    this.flipAngle += this.flipSpeed;
-
-    if (this.y > height + 50) this.init(width, height, false);
-    if (this.x > width + 50) this.x = -50;
-    else if (this.x < -50) this.x = width + 50;
-  }
-
-  draw(ctx: CanvasRenderingContext2D) {
-    ctx.save();
-    ctx.translate(this.x, this.y);
-    const flipScale = Math.sin(this.flipAngle);
-    const squashScale = 1 + (1 - Math.abs(flipScale)) * 0.1;
-    ctx.rotate(this.angle);
-    ctx.scale(squashScale, flipScale);
-    ctx.globalAlpha = this.opacity;
-    ctx.fillStyle = this.color;
-    ctx.beginPath();
-    ctx.moveTo(0, this.size);
-    ctx.quadraticCurveTo(this.size, -this.size * 0.2, 0, -this.size);
-    ctx.quadraticCurveTo(-this.size, -this.size * 0.2, 0, this.size);
-    ctx.fill();
-    ctx.restore();
-  }
-}
-
-// ---------------------------
-// MAIN PARTICLE CLASS
-// ---------------------------
-class Particle {
-  x: number;
-  y: number;
-  originX: number;
-  originY: number;
-  baseSize: number;
-  size: number;
-  color: string;
-  vx: number;
-  vy: number;
-  ease: number;
-  friction: number;
-  
-  // Wave/Drift
-  waveAmplitude: number;
-  pulsePhase: number;
-  driftPhase: number;
-  driftSpeed: number;
-  driftRadius: number;
-  flashLife: number;
-
-  constructor(x: number, y: number, color: string, canvasWidth: number, canvasHeight: number) {
-    this.originX = x;
-    this.originY = y;
-    this.x = Math.random() * canvasWidth;
-    this.y = Math.random() * canvasHeight;
-    this.baseSize = Math.random() * 0.8 + 0.3; 
-    this.size = this.baseSize;
-    this.color = color;
-    this.vx = 0;
-    this.vy = 0;
-    this.ease = 0.005; 
-    this.friction = 0.92; 
-    this.waveAmplitude = 0.2 + Math.random() * 1.0; 
-    this.pulsePhase = Math.random() * Math.PI * 2;
-    this.driftPhase = Math.random() * Math.PI * 2;
-    this.driftSpeed = 0.5 + Math.random() * 1.5; 
-    this.driftRadius = 1.0 + Math.random() * 3.0; 
-    this.flashLife = 0;
-  }
-
-  flash() {
-    this.flashLife = 1.0;
-  }
-
-  draw(ctx: CanvasRenderingContext2D) {
-    ctx.globalAlpha = 1.0;
-    if (this.flashLife > 0) {
-      ctx.beginPath();
-      ctx.fillStyle = '#FFFFFF';
-      ctx.globalAlpha = this.flashLife * 0.6;
-      ctx.arc(this.x, this.y, this.size * 8 + 2, 0, Math.PI * 2); 
-      ctx.fill();
-      ctx.globalAlpha = 1.0;
-      ctx.fillStyle = '#FFFFFF';
-    } else {
-      ctx.fillStyle = this.color;
-    }
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  update(mouse: { x: number; y: number; radius: number }, time: number, canvasWidth: number, canvasHeight: number, bloomFactor: number) {
-    // 1. DYNAMIC BLOOM (Controlled by Hand or Auto Sine)
-    // bloomFactor is 0 (Closed) to 1 (Open)
-    // Map bloomFactor to scale: 0.2 (Tight bud) -> 1.1 (Fully Open)
-    const bloomScale = 0.2 + (bloomFactor * 0.9);
-
-    // 2. PARTICLE SIZE DYNAMICS
-    const pulse = Math.sin(time * 2 + this.pulsePhase);
-    this.size = this.baseSize * (1 + pulse * 0.2 + bloomFactor * 0.2);
-    if (this.size < 0.1) this.size = 0.1;
-
-    // Flash Decay
-    if (this.flashLife > 0) {
-      this.flashLife -= 0.05; 
-      if (this.flashLife < 0) this.flashLife = 0;
-    }
-
-    // 3. FLOWER FOLDING (Rotation & Expansion)
-    const centerX = canvasWidth / 2;
-    const centerY = canvasHeight / 2;
-    const relativeX = this.originX - centerX;
-    const relativeY = this.originY - centerY;
-    
-    // Twist effect: More twist when closed (bloomScale low)
-    const rotationStrength = (1.1 - bloomScale) * 1.5; 
-    const currentDist = Math.sqrt(relativeX * relativeX + relativeY * relativeY);
-    const currentAngle = Math.atan2(relativeY, relativeX);
-    
-    // Twist increases with distance from center
-    const newAngle = currentAngle + rotationStrength * (currentDist / 200);
-
-    const rotatedX = Math.cos(newAngle) * currentDist;
-    const rotatedY = Math.sin(newAngle) * currentDist;
-
-    // Outer Petal Expansion: Exaggerate outer particles when opening
-    const maxDimension = Math.min(canvasWidth, canvasHeight) / 2;
-    const normalizedDist = Math.min(currentDist / maxDimension, 1.0);
-    const outerExpansion = 1.0 + (normalizedDist * normalizedDist * 0.5 * bloomFactor);
-
-    const combinedScale = bloomScale * outerExpansion;
-    
-    const targetX = centerX + (rotatedX * combinedScale);
-    const targetY = centerY + (rotatedY * combinedScale);
-
-    // Mouse Interaction
-    const dx = mouse.x - this.x;
-    const dy = mouse.y - this.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-
-    if (distance < mouse.radius) {
-      const force = -mouse.radius / distance;
-      const angle = Math.atan2(dy, dx);
-      this.vx += force * Math.cos(angle) * 2; 
-      this.vy += force * Math.sin(angle) * 2;
-    }
-
-    // Waves & Drift
-    const waveX = Math.sin(time * 0.5 + this.originY * 0.05) * this.waveAmplitude;
-    const waveY = Math.cos(time * 0.3 + this.originX * 0.05) * this.waveAmplitude;
-    const driftX = Math.sin(time * this.driftSpeed + this.driftPhase) * this.driftRadius;
-    const driftY = Math.cos(time * this.driftSpeed * 0.8 + this.driftPhase) * this.driftRadius;
-
-    // Physics update
-    const desiredX = targetX + waveX + driftX;
-    const desiredY = targetY + waveY + driftY;
-
-    this.vx += (desiredX - this.x) * this.ease;
-    this.vy += (desiredY - this.y) * this.ease;
-
-    this.vx *= this.friction;
-    this.vy *= this.friction;
-
-    this.x += this.vx;
-    this.y += this.vy;
-  }
-}
-
-const ParticleCanvas: React.FC<ParticleCanvasProps> = ({ imageSrc }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationRef = useRef<number>();
-  const particlesRef = useRef<Particle[]>([]);
-  const fallingPetalsRef = useRef<FallingPetal[]>([]);
-  const mouseRef = useRef({ x: 0, y: 0, radius: 100 });
-  const timeRef = useRef(0);
-  
-  // MediaPipe Refs
+const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
+  const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(document.createElement('video'));
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
+  
+  // Three.js Refs
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const geometryRef = useRef<THREE.BufferGeometry | null>(null);
+  const particlesRef = useRef<THREE.Points | null>(null);
+  
+  // HUD Refs
+  const hudCanvasRef = useRef<HTMLCanvasElement>(null);
+  const logsRef = useRef<string[]>([]);
+  const prevTipsRef = useRef<{ thumb: {x:number, y:number}, index: {x:number, y:number}, time: number } | null>(null);
+  
+  // Logic Refs
+  const targetPositionsRef = useRef<Float32Array | null>(null);
+  const currentPositionsRef = useRef<Float32Array | null>(null);
+  const driftRef = useRef<Float32Array | null>(null);
+  const bgSpeedsRef = useRef<Float32Array | null>(null);
+  const frameIdRef = useRef<number>(0);
   const lastVideoTimeRef = useRef(-1);
-  const handBloomFactorRef = useRef(0.5); // Current bloom state
-  const isHandDetectedRef = useRef(false);
+  const handFactorRef = useRef(0);
 
-  // Initialize MediaPipe
+  const addLog = (msg: string) => {
+    const d = new Date();
+    const time = d.toLocaleTimeString('en-US', { hour12: false });
+    const ms = Math.floor(d.getMilliseconds() / 10).toString().padStart(2, '0');
+    logsRef.current.unshift(`[${time}.${ms}] ${msg}`);
+    if (logsRef.current.length > 20) logsRef.current.pop();
+  };
+
   useEffect(() => {
-    const initLandmarker = async () => {
+    const initVision = async () => {
+      addLog("SYS: INIT VISION...");
       const vision = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9/wasm"
       );
@@ -270,226 +66,512 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = ({ imageSrc }) => {
         runningMode: "VIDEO",
         numHands: 1
       });
+      addLog("SYS: MODEL LOADED");
 
       if (navigator.mediaDevices?.getUserMedia) {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
             videoRef.current.srcObject = stream;
             videoRef.current.play();
+            addLog("SYS: CAM ACTIVE");
         } catch (e) {
             console.error("Webcam error:", e);
+            addLog("ERR: CAM FAILED");
         }
       }
     };
-    initLandmarker();
+    initVision();
   }, []);
 
-  const desaturateColor = (r: number, g: number, b: number, factor: number = 0.1): string => {
-    const avg = (r + g + b) / 3;
-    const newR = Math.floor(r * (1 - factor) + avg * factor);
-    const newG = Math.floor(g * (1 - factor) + avg * factor);
-    const newB = Math.floor(b * (1 - factor) + avg * factor);
-    return `rgb(${newR}, ${newG}, ${newB})`;
+  // --- REFINED LOTUS GENERATION ---
+  const generateLotus = () => {
+    const positions = new Float32Array(PARTICLE_COUNT * 3);
+    const colors = new Float32Array(PARTICLE_COUNT * 3);
+    const drift = new Float32Array(PARTICLE_COUNT * 3);
+    const bgSpeeds = new Float32Array(PARTICLE_COUNT * 3);
+    
+    // Palette
+    const colorPod = new THREE.Color('#FFD700'); // Gold for seeds
+    const colorPodBase = new THREE.Color('#9ACD32'); // YellowGreen for pod base
+    const colorPetalBase = new THREE.Color('#FFFAFA'); // Snow white base
+    const colorPetalTip = new THREE.Color('#FF1493'); // Deep Pink tip
+    const colorPetalMid = new THREE.Color('#FF69B4'); // Hot Pink mid
+
+    let pIndex = 0;
+
+    // 1. THE POD (Lotus Seed Head) - Approx 15% of flower particles
+    // Solid flat top + tapered cup
+    const podBudget = Math.floor(FLOWER_COUNT * 0.15);
+    for (let i = 0; i < podBudget; i++) {
+        // Golden angle spiral for seeds on top
+        const theta = i * 2.39996;
+        const t = i / podBudget;
+        
+        // Shape: A truncated cone (Cup)
+        // Top surface (Seeds)
+        const topRadius = 0.5;
+        const bottomRadius = 0.2;
+        const podHeight = 0.5;
+
+        let x, y, z, c;
+
+        if (Math.random() > 0.4) {
+             // Top Surface (Dense)
+             const r = Math.sqrt(Math.random()) * topRadius;
+             const angle = Math.random() * Math.PI * 2;
+             x = r * Math.cos(angle);
+             z = r * Math.sin(angle);
+             y = podHeight / 2;
+             
+             // Seeds texture (yellow dots)
+             if (Math.random() > 0.8) c = colorPod;
+             else c = colorPodBase;
+        } else {
+             // Side Surface
+             const h = Math.random(); // 0 to 1
+             const r = bottomRadius + (topRadius - bottomRadius) * h;
+             const angle = Math.random() * Math.PI * 2;
+             x = r * Math.cos(angle);
+             z = r * Math.sin(angle);
+             y = (h - 0.5) * podHeight;
+             c = colorPodBase;
+        }
+
+        const ix = pIndex * 3;
+        positions[ix] = x;
+        positions[ix+1] = y + 0.2; // Lift slightly
+        positions[ix+2] = z;
+
+        colors[ix] = c.r;
+        colors[ix+1] = c.g;
+        colors[ix+2] = c.b;
+
+        drift[ix] = (Math.random()-0.5) * 2;
+        drift[ix+1] = (Math.random()-0.5) * 2;
+        drift[ix+2] = (Math.random()-0.5) * 2;
+        pIndex++;
+    }
+
+    // 2. THE PETALS - Detailed Layering
+    // We define layers with specific petal counts and shapes
+    const layers = [
+        // Inner Bud (Tight, standing up)
+        { count: 6,  radiusBase: 0.6, length: 1.2, tilt: 0.2, width: 0.5, curve: 0.2, yOff: 0.0 },
+        // Mid Layer 1 (Opening)
+        { count: 9,  radiusBase: 0.8, length: 1.5, tilt: 0.5, width: 0.7, curve: 0.5, yOff: 0.1 },
+        // Mid Layer 2 (Blooming)
+        { count: 12, radiusBase: 1.0, length: 1.8, tilt: 0.9, width: 0.9, curve: 0.8, yOff: 0.2 },
+        // Outer Layer 1 (Wide)
+        { count: 15, radiusBase: 1.2, length: 2.1, tilt: 1.2, width: 1.1, curve: 1.0, yOff: 0.3 },
+        // Outer Layer 2 (Base sepals/petals)
+        { count: 20, radiusBase: 1.4, length: 2.2, tilt: 1.5, width: 1.2, curve: 0.5, yOff: 0.35 },
+    ];
+
+    const petalBudget = FLOWER_COUNT - pIndex;
+    const particlesPerPetal = Math.floor(petalBudget / layers.reduce((acc, l) => acc + l.count, 0));
+
+    layers.forEach((layer, lIdx) => {
+        for (let p = 0; p < layer.count; p++) {
+            // Angle of this specific petal center
+            // Add offset based on layer to interleave petals (Phyllotaxis-ish)
+            const petalCenterAngle = (p / layer.count) * Math.PI * 2 + (lIdx * 0.5);
+
+            for (let k = 0; k < particlesPerPetal; k++) {
+                if (pIndex >= FLOWER_COUNT) break;
+
+                // Parametric Petal Math
+                // u: horizontal position within petal (-0.5 to 0.5)
+                // v: vertical position along petal length (0 to 1)
+                
+                // We distribute more particles near the edges and center line for definition
+                let u = (Math.random() - 0.5);
+                let v = Math.random();
+                
+                // Shape function: Width varies by height
+                // Taper at bottom (0), widen at middle, taper at top (1)
+                const shapeWidth = Math.sin(v * Math.PI) * layer.width;
+                
+                // Actual local coordinates
+                // Add some "thickness" noise to u
+                const localX = u * shapeWidth + (Math.random()-0.5) * 0.05; 
+                const localY = v * layer.length;
+                const localZ = (Math.random() - 0.5) * 0.05; // Thickness
+
+                // Curve logic: Bend the petal outward
+                // The higher the v, the more it pushes out (Z axis in local petal space)
+                const curveZ = -Math.pow(v, 1.5) * layer.curve;
+
+                // Rotation Matrices
+                // 1. Tilt (Open the flower) - Rotate around X
+                const cosT = Math.cos(layer.tilt);
+                const sinT = Math.sin(layer.tilt);
+                let y1 = localY * cosT - (localZ + curveZ) * sinT;
+                let z1 = localY * sinT + (localZ + curveZ) * cosT;
+
+                // 2. Place at radius
+                z1 += layer.radiusBase;
+
+                // 3. Rotate around Y (Petal placement ring)
+                const cosA = Math.cos(petalCenterAngle);
+                const sinA = Math.sin(petalCenterAngle);
+                
+                const finalX = localX * cosA + z1 * sinA;
+                const finalZ = -localX * sinA + z1 * cosA;
+                const finalY = y1 + layer.yOff - 1.0; // Center vertically
+
+                const ix = pIndex * 3;
+                positions[ix] = finalX;
+                positions[ix+1] = finalY;
+                positions[ix+2] = finalZ;
+
+                // Color Gradient Logic
+                let c = new THREE.Color();
+                // Base is white, Middle is pink, Tip is deep pink
+                if (v < 0.3) {
+                    c.copy(colorPetalBase);
+                } else if (v < 0.7) {
+                    c.copy(colorPetalBase).lerp(colorPetalMid, (v - 0.3) * 2.5);
+                } else {
+                    c.copy(colorPetalMid).lerp(colorPetalTip, (v - 0.7) * 3.3);
+                }
+                
+                // Add some slight variation
+                c.offsetHSL(0, 0, (Math.random() - 0.5) * 0.1);
+
+                colors[ix] = c.r;
+                colors[ix+1] = c.g;
+                colors[ix+2] = c.b;
+
+                // Drift vectors
+                drift[ix] = (Math.random() - 0.5) * 6;
+                drift[ix+1] = (Math.random() - 0.5) * 6;
+                drift[ix+2] = (Math.random() - 0.5) * 6;
+
+                pIndex++;
+            }
+        }
+    });
+
+    // 3. BACKGROUND (Stars/Dust)
+    // Reduce range to keep them closer to the flower context, but sparse
+    for (let i = pIndex; i < PARTICLE_COUNT; i++) {
+        const ix = i * 3;
+        const range = 20; // Slightly tighter background
+        positions[ix] = (Math.random() - 0.5) * range;
+        positions[ix+1] = (Math.random() - 0.5) * range;
+        positions[ix+2] = (Math.random() - 0.5) * range;
+
+        bgSpeeds[ix] = (Math.random() - 0.5) * 0.01;
+        bgSpeeds[ix+1] = (Math.random() * 0.02) + 0.005; // Upward drift
+        bgSpeeds[ix+2] = (Math.random() - 0.5) * 0.01;
+
+        // Dim colors
+        const c = colorPetalMid.clone().multiplyScalar(0.3 + Math.random() * 0.2);
+        colors[ix] = c.r;
+        colors[ix+1] = c.g;
+        colors[ix+2] = c.b;
+    }
+
+    return { positions, colors, drift, bgSpeeds };
   };
 
-  const initParticles = useCallback((img: HTMLImageElement, ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    particlesRef.current = [];
-    const scale = Math.min(width / img.width, height / img.height) * 0.95; 
-    const newWidth = img.width * scale;
-    const newHeight = img.height * scale;
-    const offsetX = (width - newWidth) / 2;
-    const offsetY = (height - newHeight) / 2;
-
-    ctx.drawImage(img, offsetX, offsetY, newWidth, newHeight);
-    
-    const gap = 2; 
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const data = imageData.data;
-
-    for (let y = 0; y < height; y += gap) {
-      for (let x = 0; x < width; x += gap) {
-        const index = (y * width + x) * 4;
-        const r = data[index];
-        const g = data[index + 1];
-        const b = data[index + 2];
-        const alpha = data[index + 3];
-        const brightness = (r + g + b) / 3;
-
-        if (alpha > 128 && brightness > 25) {
-          let color;
-          if (brightness > 230) {
-             color = '#FFFFFF'; 
-          } else {
-             color = desaturateColor(r, g, b, 0.1); 
-          }
-          particlesRef.current.push(new Particle(x, y, color, width, height));
-        }
-      }
-    }
-    ctx.clearRect(0, 0, width, height);
-  }, []);
-
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!containerRef.current) return;
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x000000, 0.03); 
+    sceneRef.current = scene;
+
+    // Zoomed in slightly (Z: 4.5 -> 3.8) for better screen fill
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 2.5, 3.8); 
+    camera.lookAt(0, 0.5, 0); 
+
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    containerRef.current.innerHTML = '';
+    containerRef.current.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
+
+    const hudCanvas = document.createElement('canvas');
+    hudCanvas.className = "absolute inset-0 pointer-events-none z-20";
+    hudCanvas.width = window.innerWidth;
+    hudCanvas.height = window.innerHeight;
+    containerRef.current.appendChild(hudCanvas);
+    hudCanvasRef.current = hudCanvas;
+
+    const geometry = new THREE.BufferGeometry();
+    const { positions, colors, drift, bgSpeeds } = generateLotus();
+    targetPositionsRef.current = positions;
+    driftRef.current = drift;
+    bgSpeedsRef.current = bgSpeeds;
+    currentPositionsRef.current = new Float32Array(positions); 
     
-    const count = 70; 
-    fallingPetalsRef.current = [];
-    for (let i = 0; i < count; i++) {
-        fallingPetalsRef.current.push(new FallingPetal(canvas.width || window.innerWidth, canvas.height || window.innerHeight));
-    }
-  }, []);
+    geometry.setAttribute('position', new THREE.BufferAttribute(currentPositionsRef.current, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometryRef.current = geometry;
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return;
-
-    const resizeObserver = new ResizeObserver(() => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      
-      fallingPetalsRef.current = [];
-      const count = 70;
-      for (let i = 0; i < count; i++) {
-        fallingPetalsRef.current.push(new FallingPetal(canvas.width, canvas.height));
-      }
-
-      if (imageSrc) {
-        const img = new Image();
-        img.src = imageSrc;
-        img.onload = () => initParticles(img, ctx, canvas.width, canvas.height);
-      }
+    const material = new THREE.PointsMaterial({
+      size: 0.035, // Finer particles
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending, 
+      depthWrite: false,
     });
-    resizeObserver.observe(document.body);
 
-    if (imageSrc) {
-      const img = new Image();
-      img.src = imageSrc;
-      img.onload = () => {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-        initParticles(img, ctx, canvas.width, canvas.height);
-      };
-    } else {
-      particlesRef.current = [];
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
+    const points = new THREE.Points(geometry, material);
+    scene.add(points);
+    particlesRef.current = points;
+
+    // HUD Draw Function
+    const drawSineLine = (ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, active: boolean) => {
+        const dist = Math.hypot(x2 - x1, y2 - y1);
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        
+        ctx.beginPath();
+        if (active) {
+            const steps = dist / 2;
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                const bx = x1 + (x2 - x1) * t;
+                const by = y1 + (y2 - y1) * t;
+                const offset = Math.sin(t * 15 - Date.now() / 50) * 8 * Math.sin(t * Math.PI); 
+                const ox = offset * Math.cos(angle + Math.PI/2);
+                const oy = offset * Math.sin(angle + Math.PI/2);
+                ctx.lineTo(bx + ox, by + oy);
+            }
+            ctx.strokeStyle = COLOR_WARN;
+            ctx.lineWidth = 2.5;
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = COLOR_WARN;
+        } else {
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = COLOR_SKELETON;
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([5, 5]);
+            ctx.shadowBlur = 0;
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.shadowBlur = 0;
+        
+        const cx = (x1 + x2) / 2;
+        const cy = (y1 + y2) / 2;
+        ctx.fillStyle = active ? "#FFF" : "rgba(255,255,255,0.7)";
+        ctx.font = "10px monospace";
+        ctx.fillText(`${dist.toFixed(0)}px`, cx, cy - 10);
+    };
 
     const animate = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      timeRef.current += 0.0005;
+      frameIdRef.current = requestAnimationFrame(animate);
+      const timeNow = performance.now();
 
-      // 1. Hand Tracking Logic
+      // --- HUD RENDERING ---
+      const ctx = hudCanvasRef.current?.getContext('2d');
+      if (ctx && hudCanvasRef.current) {
+          ctx.clearRect(0, 0, hudCanvasRef.current.width, hudCanvasRef.current.height);
+          
+          // Left Panel
+          ctx.fillStyle = COLOR_HUD_BG;
+          ctx.fillRect(0, 0, 250, hudCanvasRef.current.height);
+          
+          ctx.fillStyle = "#FFF";
+          ctx.font = "bold 14px 'Courier New'";
+          ctx.fillText("SYSTEM MONITOR_V1.1", 15, 30);
+          ctx.fillStyle = COLOR_ACCENT;
+          ctx.fillRect(15, 40, 220, 2);
+
+          const yStart = 60;
+          const lineH = 18;
+          ctx.font = FONT_MONO;
+          ctx.fillStyle = COLOR_HUD_TEXT;
+          
+          ctx.fillText(`FPS: ${(1000 / (timeNow - (lastVideoTimeRef.current * 1000 || timeNow))).toFixed(0)}`, 15, yStart);
+          ctx.fillText(`LATENCY: ${(Math.random() * 5 + 10).toFixed(1)}ms`, 15, yStart + lineH);
+          ctx.fillText(`PARTICLES: ${(FLOWER_COUNT/1000).toFixed(1)}K`, 15, yStart + lineH * 2);
+          
+          ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
+          ctx.fillRect(15, yStart + lineH * 4, 220, 80);
+          ctx.fillStyle = COLOR_ACCENT;
+          ctx.fillText("SENSOR STATUS", 25, yStart + lineH * 5.5);
+          
+          const isTracking = handFactorRef.current !== undefined;
+          ctx.fillStyle = isTracking ? "#0F0" : "#F00";
+          ctx.fillText(isTracking ? "● ONLINE" : "● SEARCHING...", 150, yStart + lineH * 5.5);
+
+          const mode = handFactorRef.current > 0.5 ? "BLOOM (OPEN)" : "FORM (CLOSED)";
+          ctx.fillStyle = handFactorRef.current > 0.5 ? COLOR_ACCENT : COLOR_WARN;
+          ctx.font = "bold 12px 'Courier New'";
+          ctx.fillText(`MODE: ${mode}`, 25, yStart + lineH * 7.5);
+
+          ctx.font = "10px monospace";
+          ctx.fillStyle = "#888";
+          ctx.fillText("EVENT LOG >", 15, hudCanvasRef.current.height - 220);
+          
+          logsRef.current.forEach((log, i) => {
+              const y = hudCanvasRef.current!.height - 200 + (i * 12);
+              const alpha = 1 - (i / 20);
+              ctx.fillStyle = `rgba(150, 255, 200, ${alpha})`;
+              ctx.fillText(log, 15, y);
+          });
+      }
+
+      // --- HAND TRACKING ---
       if (handLandmarkerRef.current && videoRef.current && videoRef.current.readyState >= 2) {
-         if (videoRef.current.currentTime !== lastVideoTimeRef.current) {
+        if (videoRef.current.currentTime !== lastVideoTimeRef.current) {
             lastVideoTimeRef.current = videoRef.current.currentTime;
-            const results = handLandmarkerRef.current.detectForVideo(videoRef.current, performance.now());
+            const results = handLandmarkerRef.current.detectForVideo(videoRef.current, timeNow);
             
             if (results.landmarks && results.landmarks.length > 0) {
-                isHandDetectedRef.current = true;
                 const hand = results.landmarks[0];
+                const thumbTip = hand[4];
+                const indexTip = hand[8];
+
+                const w = hudCanvasRef.current!.width;
+                const h = hudCanvasRef.current!.height;
+                const tx = (1 - thumbTip.x) * w; 
+                const ty = thumbTip.y * h;
+                const ix = (1 - indexTip.x) * w;
+                const iy = indexTip.y * h;
                 
-                // Calculate Openness:
-                // Compare distance of Wrist(0) to MiddleTip(12) vs Wrist(0) to MiddleMCP(9)
-                const wrist = hand[0];
-                const middleTip = hand[12];
-                const middleMCP = hand[9];
-                
-                const palmLen = Math.sqrt(
-                    Math.pow(middleMCP.x - wrist.x, 2) + Math.pow(middleMCP.y - wrist.y, 2)
-                );
-                const fingerLen = Math.sqrt(
-                    Math.pow(middleTip.x - wrist.x, 2) + Math.pow(middleTip.y - wrist.y, 2)
-                );
-                
-                // Ratio: ~2.0 is Open, ~1.0 or less is Closed/Fist
-                const ratio = fingerLen / palmLen;
-                
-                // Map ratio to 0-1 range
-                // Clamped: <1.2 = Closed, >1.8 = Open
-                let targetBloom = (ratio - 1.2) / 0.6;
-                targetBloom = Math.max(0, Math.min(1, targetBloom));
+                if (ctx) {
+                    ctx.strokeStyle = COLOR_SKELETON;
+                    ctx.lineWidth = 2;
+                    ctx.shadowBlur = 5;
+                    ctx.shadowColor = "rgba(255,255,255,0.5)";
+                    
+                    const joints = [[0,1,2,3,4], [0,5,6,7,8], [9,10,11,12], [13,14,15,16], [0,17,18,19,20]];
+                    ctx.beginPath();
+                    joints.forEach(chain => {
+                        for(let j=0; j<chain.length-1; j++) {
+                            const p1 = hand[chain[j]];
+                            const p2 = hand[chain[j+1]];
+                            ctx.moveTo((1-p1.x)*w, p1.y*h);
+                            ctx.lineTo((1-p2.x)*w, p2.y*h);
+                        }
+                    });
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+
+                    let tv = 0, iv = 0;
+                    if (prevTipsRef.current) {
+                        const dt = (timeNow - prevTipsRef.current.time) / 1000;
+                        if (dt > 0) {
+                            tv = Math.hypot(tx - prevTipsRef.current.thumb.x, ty - prevTipsRef.current.thumb.y) / dt;
+                            iv = Math.hypot(ix - prevTipsRef.current.index.x, iy - prevTipsRef.current.index.y) / dt;
+                        }
+                    }
+                    prevTipsRef.current = { thumb: {x:tx, y:ty}, index: {x:ix, y:iy}, time: timeNow };
+
+                    const drawTipUI = (x: number, y: number, label: string, vel: number) => {
+                        ctx.fillStyle = COLOR_HUD_BG;
+                        ctx.strokeStyle = COLOR_ACCENT;
+                        ctx.beginPath();
+                        ctx.arc(x, y, 4, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.stroke();
+                        ctx.fillStyle = COLOR_HUD_TEXT;
+                        ctx.font = "9px monospace";
+                        ctx.fillText(`${label} [${x.toFixed(0)},${y.toFixed(0)}]`, x + 10, y);
+                        ctx.fillStyle = vel > 500 ? COLOR_WARN : COLOR_ACCENT;
+                        ctx.fillRect(x + 10, y + 4, Math.min(vel / 10, 50), 2);
+                    };
+                    drawTipUI(tx, ty, "THUMB", tv);
+                    drawTipUI(ix, iy, "INDEX", iv);
+
+                    const distPixels = Math.hypot(ix - tx, iy - ty);
+                    const isPinched = distPixels < 50;
+                    drawSineLine(ctx, tx, ty, ix, iy, isPinched);
+
+                    const newState = isPinched ? 0 : 1;
+                    if (Math.abs(newState - handFactorRef.current) > 0.5) {
+                         if (isPinched) addLog("GESTURE: FORM DETECTED");
+                         else addLog("GESTURE: BLOOM RELEASE");
+                    }
+                }
+
+                const distance = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
+                let target = (distance - 0.05) * 5; 
+                target = Math.max(0, Math.min(1.5, target)); 
+                handFactorRef.current += (target - handFactorRef.current) * 0.1;
+
+                if (Math.random() > 0.98) addLog(`CONF: ${(results.handedness[0][0].score * 100).toFixed(1)}%`);
+
+            } else {
+                handFactorRef.current += (0 - handFactorRef.current) * 0.05;
+                prevTipsRef.current = null;
+            }
+        }
+      }
+
+      // --- PARTICLE PHYSICS ---
+      if (geometryRef.current && targetPositionsRef.current && driftRef.current && currentPositionsRef.current && bgSpeedsRef.current) {
+        const targets = targetPositionsRef.current;
+        const current = currentPositionsRef.current;
+        const drifts = driftRef.current;
+        const bgSpeeds = bgSpeedsRef.current;
+        const factor = handFactorRef.current; 
+
+        // Adjusted dynamics for the dense flower
+        const scaleStrength = 1 + factor * 2.0; 
+        const spreadStrength = factor * 2.5; 
+
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+            const ix = i * 3;
+            const iy = i * 3 + 1;
+            const iz = i * 3 + 2;
+
+            if (i < FLOWER_COUNT) {
+                // Target Logic
+                let tx = targets[ix];
+                let ty = targets[iy];
+                let tz = targets[iz];
+
+                // When blooming (factor > 0), explode outwards
+                if (factor > 0.1) {
+                    tx = tx * scaleStrength + drifts[ix] * spreadStrength;
+                    ty = ty * scaleStrength + drifts[iy] * spreadStrength;
+                    tz = tz * scaleStrength + drifts[iz] * spreadStrength;
+                }
 
                 // Smooth interpolation
-                handBloomFactorRef.current += (targetBloom - handBloomFactorRef.current) * 0.1;
+                current[ix] += (tx - current[ix]) * 0.1;
+                current[iy] += (ty - current[iy]) * 0.1;
+                current[iz] += (tz - current[iz]) * 0.1;
             } else {
-                isHandDetectedRef.current = false;
+                // Background
+                current[ix] += bgSpeeds[ix];
+                current[iy] += bgSpeeds[iy];
+                current[iz] += bgSpeeds[iz];
+
+                const range = 20;
+                if (current[iy] > range) current[iy] = -range;
+                if (current[ix] > range) current[ix] = -range; if (current[ix] < -range) current[ix] = range;
+                if (current[iz] > range) current[iz] = -range; if (current[iz] < -range) current[iz] = range;
             }
-         }
+        }
+        geometryRef.current.attributes.position.needsUpdate = true;
       }
 
-      // 2. Determine Final Bloom Factor
-      let bloomFactor;
-      if (isHandDetectedRef.current) {
-         // If hand present, it overrides auto animation
-         bloomFactor = handBloomFactorRef.current;
-      } else {
-         // Auto Sine Wave Animation
-         // Value from 0.0 to 1.0
-         bloomFactor = (Math.sin(timeRef.current * 2000 * 0.001) + 1) / 2;
+      if (particlesRef.current) {
+        particlesRef.current.rotation.y += 0.001 + (handFactorRef.current * 0.005);
       }
 
-      // 3. Draw Background Petals
-      fallingPetalsRef.current.forEach(petal => {
-        petal.update(canvas.width, canvas.height, timeRef.current * 1000); 
-        petal.draw(ctx);
-      });
-
-      // 4. Draw Main Particles
-      particlesRef.current.forEach(particle => {
-        particle.update(mouseRef.current, timeRef.current, canvas.width, canvas.height, bloomFactor);
-        particle.draw(ctx);
-      });
-
-      animationRef.current = requestAnimationFrame(animate);
+      renderer.render(scene, camera);
     };
 
     animate();
 
     return () => {
-      resizeObserver.disconnect();
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+        cancelAnimationFrame(frameIdRef.current);
+        renderer.dispose();
     };
-  }, [imageSrc, initParticles]);
+  }, []);
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    mouseRef.current.x = e.clientX;
-    mouseRef.current.y = e.clientY;
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (e.touches.length > 0) {
-        mouseRef.current.x = e.touches[0].clientX;
-        mouseRef.current.y = e.touches[0].clientY;
-    }
-  }
-
-  const handleClick = (e: React.MouseEvent) => {
-    const clickX = e.clientX;
-    const clickY = e.clientY;
-    const interactionRadius = 50;
-
-    particlesRef.current.forEach(p => {
-        const dx = p.x - clickX;
-        const dy = p.y - clickY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < interactionRadius) {
-            p.flash();
-        }
-    });
-  };
-
-  return (
-    <canvas
-      ref={canvasRef}
-      className="absolute inset-0 w-full h-full pointer-events-auto"
-      onMouseMove={handleMouseMove}
-      onTouchMove={handleTouchMove}
-      onClick={handleClick}
-    />
-  );
+  return <div ref={containerRef} className="absolute inset-0 w-full h-full z-10" />;
 };
 
 export default ParticleCanvas;
