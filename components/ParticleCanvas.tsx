@@ -26,6 +26,7 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
   
   // Three.js Refs
   const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const geometryRef = useRef<THREE.BufferGeometry | null>(null);
   const particlesRef = useRef<THREE.Points | null>(null);
@@ -38,11 +39,13 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
   // Logic Refs
   const targetPositionsRef = useRef<Float32Array | null>(null);
   const currentPositionsRef = useRef<Float32Array | null>(null);
+  const baseColorsRef = useRef<Float32Array | null>(null); // Store original colors for morphing
   const driftRef = useRef<Float32Array | null>(null);
   const bgSpeedsRef = useRef<Float32Array | null>(null);
   const frameIdRef = useRef<number>(0);
   const lastVideoTimeRef = useRef(-1);
   const handFactorRef = useRef(0);
+  const proximityRef = useRef(0); // 0 (Far) to 1 (Close)
 
   const addLog = (msg: string) => {
     const d = new Date();
@@ -99,28 +102,23 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
 
     let pIndex = 0;
 
-    // 1. THE POD (Lotus Seed Head) - Approx 12% of flower particles
-    // Solid flat top + tapered cup
+    // 1. THE POD (Lotus Seed Head)
     const podBudget = Math.floor(FLOWER_COUNT * 0.12);
     for (let i = 0; i < podBudget; i++) {
-        // Top surface
         const topRadius = 0.45;
         const bottomRadius = 0.15;
         const podHeight = 0.4;
         let x, y, z, c;
 
         if (Math.random() > 0.35) {
-             // Top Surface (Dense)
              const r = Math.sqrt(Math.random()) * topRadius;
              const angle = Math.random() * Math.PI * 2;
              x = r * Math.cos(angle);
              z = r * Math.sin(angle);
              y = podHeight / 2;
-             
-             if (Math.random() > 0.85) c = colorPod; // Seeds
+             if (Math.random() > 0.85) c = colorPod; 
              else c = colorPodBase;
         } else {
-             // Side Surface
              const h = Math.random(); 
              const r = bottomRadius + (topRadius - bottomRadius) * h;
              const angle = Math.random() * Math.PI * 2;
@@ -145,18 +143,12 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
         pIndex++;
     }
 
-    // 2. THE PETALS - High Definition Layering
-    // Increased counts per layer, tighter jitter for sharper edges
+    // 2. THE PETALS
     const layers = [
-        // Inner Bud 
         { count: 6,  radiusBase: 0.5, length: 1.1, tilt: 0.15, width: 0.45, curve: 0.2, yOff: 0.0 },
-        // Mid Layer 1 
         { count: 9,  radiusBase: 0.7, length: 1.4, tilt: 0.45, width: 0.65, curve: 0.4, yOff: 0.1 },
-        // Mid Layer 2 
         { count: 12, radiusBase: 0.9, length: 1.7, tilt: 0.8, width: 0.85, curve: 0.7, yOff: 0.18 },
-        // Outer Layer 1 
         { count: 18, radiusBase: 1.1, length: 2.0, tilt: 1.1, width: 1.0, curve: 0.9, yOff: 0.28 },
-        // Outer Layer 2 
         { count: 24, radiusBase: 1.3, length: 2.2, tilt: 1.4, width: 1.1, curve: 0.6, yOff: 0.35 },
     ];
 
@@ -172,27 +164,17 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
 
                 let u = (Math.random() - 0.5);
                 let v = Math.random();
-                
-                // Shape: Use power function to keep the petal body fuller, sharper tip
                 const shapeWidth = Math.sin(v * Math.PI) * layer.width;
-                
-                // REDUCED NOISE for sharper edges (was 0.05)
                 const localX = u * shapeWidth + (Math.random()-0.5) * 0.015; 
                 const localY = v * layer.length;
-
-                // Edge Curl
                 const edgeCurl = -Math.pow(Math.abs(u * 2), 2.5) * 0.15; 
-                // Very thin petals (z-noise reduced)
                 const localZ = (Math.random() - 0.5) * 0.02 + edgeCurl; 
-
                 const curveZ = -Math.pow(v, 1.4) * layer.curve;
 
-                // Rotation Matrices
                 const cosT = Math.cos(layer.tilt);
                 const sinT = Math.sin(layer.tilt);
                 let y1 = localY * cosT - (localZ + curveZ) * sinT;
                 let z1 = localY * sinT + (localZ + curveZ) * cosT;
-
                 z1 += layer.radiusBase;
 
                 const cosA = Math.cos(petalCenterAngle);
@@ -207,21 +189,15 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
                 positions[ix+1] = finalY;
                 positions[ix+2] = finalZ;
 
-                // Color Gradient 
                 let c = new THREE.Color();
-                if (v < 0.25) {
-                    c.copy(colorPetalBase);
-                } else if (v < 0.65) {
-                    c.copy(colorPetalBase).lerp(colorPetalMid, (v - 0.25) * 2.5);
-                } else {
-                    c.copy(colorPetalMid).lerp(colorPetalTip, (v - 0.65) * 2.8);
-                }
+                if (v < 0.25) c.copy(colorPetalBase);
+                else if (v < 0.65) c.copy(colorPetalBase).lerp(colorPetalMid, (v - 0.25) * 2.5);
+                else c.copy(colorPetalMid).lerp(colorPetalTip, (v - 0.65) * 2.8);
                 
                 colors[ix] = c.r;
                 colors[ix+1] = c.g;
                 colors[ix+2] = c.b;
 
-                // Drift vectors (Slightly reduced for tighter form)
                 drift[ix] = (Math.random() - 0.5) * 5;
                 drift[ix+1] = (Math.random() - 0.5) * 5;
                 drift[ix+2] = (Math.random() - 0.5) * 5;
@@ -259,7 +235,6 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
     scene.fog = new THREE.FogExp2(0x000000, 0.03); 
     sceneRef.current = scene;
 
-    // Adjusted camera for new density
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
     camera.position.set(0, 2.2, 3.5); 
     camera.lookAt(0, 0.4, 0); 
@@ -281,7 +256,10 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
 
     const geometry = new THREE.BufferGeometry();
     const { positions, colors, drift, bgSpeeds } = generateLotus();
+    
+    // Store original data
     targetPositionsRef.current = positions;
+    baseColorsRef.current = new Float32Array(colors); // Copy for color morphing logic
     driftRef.current = drift;
     bgSpeedsRef.current = bgSpeeds;
     currentPositionsRef.current = new Float32Array(positions); 
@@ -291,7 +269,7 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
     geometryRef.current = geometry;
 
     const material = new THREE.PointsMaterial({
-      size: 0.028, // Smaller particles for smoother, denser look
+      size: 0.028,
       vertexColors: true,
       transparent: true,
       opacity: 0.95,
@@ -303,7 +281,6 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
     scene.add(points);
     particlesRef.current = points;
 
-    // HUD Draw Function
     const drawSineLine = (ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, active: boolean) => {
         const dist = Math.hypot(x2 - x1, y2 - y1);
         const angle = Math.atan2(y2 - y1, x2 - x1);
@@ -352,13 +329,12 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
       if (ctx && hudCanvasRef.current) {
           ctx.clearRect(0, 0, hudCanvasRef.current.width, hudCanvasRef.current.height);
           
-          // Left Panel
           ctx.fillStyle = COLOR_HUD_BG;
           ctx.fillRect(0, 0, 250, hudCanvasRef.current.height);
           
           ctx.fillStyle = "#FFF";
           ctx.font = "bold 14px 'Courier New'";
-          ctx.fillText("SYSTEM MONITOR_V1.2", 15, 30);
+          ctx.fillText("SYSTEM MONITOR_V1.3", 15, 30);
           ctx.fillStyle = COLOR_ACCENT;
           ctx.fillRect(15, 40, 220, 2);
 
@@ -370,6 +346,12 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
           ctx.fillText(`FPS: ${(1000 / (timeNow - (lastVideoTimeRef.current * 1000 || timeNow))).toFixed(0)}`, 15, yStart);
           ctx.fillText(`LATENCY: ${(Math.random() * 5 + 10).toFixed(1)}ms`, 15, yStart + lineH);
           ctx.fillText(`PARTICLES: ${(FLOWER_COUNT/1000).toFixed(1)}K`, 15, yStart + lineH * 2);
+          
+          // Show Proximity
+          const prox = proximityRef.current;
+          const proxColor = prox > 0.5 ? "#00FFFF" : "#AAA";
+          ctx.fillStyle = proxColor;
+          ctx.fillText(`PROXIMITY: ${(prox * 100).toFixed(0)}%`, 15, yStart + lineH * 3);
           
           ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
           ctx.fillRect(15, yStart + lineH * 4, 220, 80);
@@ -407,6 +389,16 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
                 const hand = results.landmarks[0];
                 const thumbTip = hand[4];
                 const indexTip = hand[8];
+                const wrist = hand[0];
+                const midTip = hand[12];
+
+                // --- PROXIMITY CALCULATION ---
+                // Calculate size of hand on screen (wrist to middle finger tip)
+                // Range roughly 0.15 (far) to 0.5 (very close)
+                const currentHandSize = Math.hypot(midTip.x - wrist.x, midTip.y - wrist.y);
+                // Normalize 0..1
+                const targetProx = Math.min(Math.max((currentHandSize - 0.15) * 3.5, 0), 1);
+                proximityRef.current += (targetProx - proximityRef.current) * 0.1;
 
                 const w = hudCanvasRef.current!.width;
                 const h = hudCanvasRef.current!.height;
@@ -480,21 +472,33 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
 
             } else {
                 handFactorRef.current += (0 - handFactorRef.current) * 0.05;
+                // Decay proximity if no hand
+                proximityRef.current *= 0.95;
                 prevTipsRef.current = null;
             }
         }
       }
 
-      // --- PARTICLE PHYSICS ---
-      if (geometryRef.current && targetPositionsRef.current && driftRef.current && currentPositionsRef.current && bgSpeedsRef.current) {
+      // --- PARTICLE PHYSICS & COLOR ---
+      if (geometryRef.current && targetPositionsRef.current && driftRef.current && currentPositionsRef.current && bgSpeedsRef.current && baseColorsRef.current) {
         const targets = targetPositionsRef.current;
         const current = currentPositionsRef.current;
         const drifts = driftRef.current;
         const bgSpeeds = bgSpeedsRef.current;
+        const baseCols = baseColorsRef.current;
+        const currentCols = geometryRef.current.attributes.color.array as Float32Array;
+        
         const factor = handFactorRef.current; 
+        const prox = proximityRef.current;
 
         const scaleStrength = 1 + factor * 2.0; 
         const spreadStrength = factor * 2.5; 
+
+        // Target Colors for proximity (Electric Blue / Cyan / Gold mix)
+        // We will shift mainly towards Cyan/Blue to contrast with Pink
+        const targetR = 0.0;
+        const targetG = 0.8; 
+        const targetB = 1.0; 
 
         for (let i = 0; i < PARTICLE_COUNT; i++) {
             const ix = i * 3;
@@ -502,22 +506,45 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
             const iz = i * 3 + 2;
 
             if (i < FLOWER_COUNT) {
-                // Target Logic
+                // POSITIONS
                 let tx = targets[ix];
                 let ty = targets[iy];
                 let tz = targets[iz];
 
-                // When blooming (factor > 0), explode outwards
                 if (factor > 0.1) {
                     tx = tx * scaleStrength + drifts[ix] * spreadStrength;
                     ty = ty * scaleStrength + drifts[iy] * spreadStrength;
                     tz = tz * scaleStrength + drifts[iz] * spreadStrength;
                 }
 
-                // Smooth interpolation
                 current[ix] += (tx - current[ix]) * 0.1;
                 current[iy] += (ty - current[iy]) * 0.1;
                 current[iz] += (tz - current[iz]) * 0.1;
+
+                // COLORS (Morph based on proximity)
+                if (prox > 0.01) {
+                    const br = baseCols[ix];
+                    const bg = baseCols[ix+1];
+                    const bb = baseCols[ix+2];
+                    
+                    // Lerp base -> target
+                    // Use a non-linear lerp for "energy" feel (pow)
+                    // We can also vary the target based on the particle's original color to preserve details
+                    
+                    // If original is white (Base), shift to Cyan
+                    // If original is Pink (Tip), shift to Purple/DeepBlue
+                    
+                    // Simple mix
+                    currentCols[ix] = br + (targetR - br) * prox;
+                    currentCols[ix+1] = bg + (targetG - bg) * prox;
+                    currentCols[ix+2] = bb + (targetB - bb) * prox;
+                } else {
+                    // Reset to base
+                    currentCols[ix] = baseCols[ix];
+                    currentCols[ix+1] = baseCols[ix+1];
+                    currentCols[ix+2] = baseCols[ix+2];
+                }
+
             } else {
                 // Background
                 current[ix] += bgSpeeds[ix];
@@ -531,6 +558,7 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
             }
         }
         geometryRef.current.attributes.position.needsUpdate = true;
+        geometryRef.current.attributes.color.needsUpdate = true;
       }
 
       if (particlesRef.current) {
