@@ -28,8 +28,11 @@ const App: React.FC = () => {
                
                <div className="h-4 w-px bg-white/20"></div>
 
-               <span className="text-xs text-gray-300">
-                 Pinch to <span className="text-yellow-300">Form</span> • Open to <span className="text-blue-300">Bloom</span>
+               <span className="text-xs text-gray-300 flex gap-3">
+                 <span>Pinch <span className="text-yellow-300">Form</span></span>
+                 <span>Open <span className="text-blue-300">Bloom</span></span>
+                 <span>Pinkies <span className="text-cyan-300 font-bold">Galaxy</span></span>
+                 <span>Cross <span className="text-orange-500 font-bold">Magic</span></span>
                </span>
             </div>
 
@@ -54,8 +57,10 @@ const App: React.FC = () => {
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-xs text-white/70">
                 <li><span className="text-pink-400">Hand Detection</span>: Uses webcam.</li>
-                <li><span className="text-yellow-300">Closed Hand</span>: Focuses the particles into the flower shape.</li>
-                <li><span className="text-blue-300">Open Hand</span>: Explodes the particles outwards.</li>
+                <li><span className="text-yellow-300">Closed Hand</span>: Focuses the particles.</li>
+                <li><span className="text-blue-300">Open Hand</span>: Explodes the particles.</li>
+                <li><span className="text-cyan-300">Pinky Touch</span>: Summon Galaxy (Merge palms, touch pinkies).</li>
+                <li><span className="text-orange-500">Cross Swords</span>: Summon Magic Shield (Index/Middle fingers extended, hands crossed).</li>
                 </ul>
             </div>
           </div>
