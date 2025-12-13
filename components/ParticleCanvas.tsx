@@ -607,6 +607,27 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
     hudCanvas.height = window.innerHeight;
     containerRef.current.appendChild(hudCanvas);
     hudCanvasRef.current = hudCanvas;
+    
+    // WINDOW RESIZE HANDLER
+    const handleResize = () => {
+        if (!cameraRef.current || !rendererRef.current || !containerRef.current) return;
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        
+        // Update camera
+        cameraRef.current.aspect = w / h;
+        cameraRef.current.updateProjectionMatrix();
+        
+        // Update renderer
+        rendererRef.current.setSize(w, h);
+        
+        // Update HUD canvas
+        if (hudCanvasRef.current) {
+            hudCanvasRef.current.width = w;
+            hudCanvasRef.current.height = h;
+        }
+    };
+    window.addEventListener('resize', handleResize);
 
     // Generate Data
     const lotusData = generateLotus();
@@ -1151,6 +1172,7 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
     animate();
 
     return () => {
+        window.removeEventListener('resize', handleResize);
         cancelAnimationFrame(frameIdRef.current);
         renderer.dispose();
     };
