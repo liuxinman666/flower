@@ -12,8 +12,9 @@ const BG_COUNT = 30000;
 const PARTICLE_COUNT = FLOWER_COUNT + BG_COUNT;
 
 // Reserved for fireworks
-const FIREWORK_PARTICLES_COUNT = 20000; 
-const FIREWORK_PARTICLES_START = FLOWER_COUNT - FIREWORK_PARTICLES_COUNT; 
+const FIREWORK_PARTICLES_COUNT = 25000; 
+// Start fireworks after the flower to avoid eating petals. Eat background instead.
+const FIREWORK_PARTICLES_START = FLOWER_COUNT; 
 
 // HUD Constants
 const FONT_MONO = "10px 'Courier New', monospace";
@@ -73,6 +74,19 @@ const createGlowTexture = () => {
   return texture;
 };
 
+// Firework Logic Interfaces
+interface Spark {
+    headIdx: number;
+    trailIndices: number[]; // Array of indices following the head
+}
+
+interface Firework {
+    id: number;
+    age: number;
+    color: THREE.Color;
+    sparks: Spark[]; 
+}
+
 const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(document.createElement('video'));
@@ -85,6 +99,13 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
   const geometryRef = useRef<THREE.BufferGeometry | null>(null);
   const particlesRef = useRef<THREE.Points | null>(null);
   const groupRef = useRef<THREE.Group | null>(null); // Group for rotation
+  const materialRef = useRef<THREE.PointsMaterial | null>(null);
+  
+  // Interaction Refs
+  const pointerRef = useRef(new THREE.Vector2(9999, 9999)); // Screen Coords
+  const raycasterRef = useRef(new THREE.Raycaster());
+  const planeRef = useRef(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)); // Z=0 plane for intersection
+  const mouseWorldPosRef = useRef(new THREE.Vector3(9999, 9999, 9999));
   
   // HUD Refs
   const hudCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -118,15 +139,92 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
   const handFactorRef = useRef(0); 
 
   // Fireworks System
-  interface Firework {
-    id: number;
-    x: number; y: number; z: number;
-    age: number;
-    color: THREE.Color;
-    indices: number[]; 
-  }
   const fireworksRef = useRef<Firework[]>([]);
   const lastFireworkTimeRef = useRef(0);
+  const fireworkCursorRef = useRef(FIREWORK_PARTICLES_START);
+
+  const allocateParticles = (count: number) => {
+      const indices: number[] = [];
+      let ptr = fireworkCursorRef.current;
+      for (let i=0; i<count; i++) {
+          indices.push(ptr);
+          ptr++;
+          // Wrap around if we exceed particle count or buffer limit
+          // We limit it to the BG/Firework zone
+          if (ptr >= PARTICLE_COUNT) {
+              ptr = FIREWORK_PARTICLES_START;
+          }
+      }
+      fireworkCursorRef.current = ptr;
+      return indices;
+  };
+
+  // Reusable function to spawn a firework at a 3D location
+  const spawnFirework = (position: THREE.Vector3) => {
+      const fwId = Date.now();
+      const TRAIL_LEN = 12;
+      const SPARK_CNT = 50; 
+      
+      const totalNeeded = SPARK_CNT * (1 + TRAIL_LEN);
+      const indices = allocateParticles(totalNeeded);
+      
+      const sparks: Spark[] = [];
+      let idxPtr = 0;
+      const baseColor = new THREE.Color().setHSL(Math.random(), 1.0, 0.6);
+
+      for(let k=0; k<SPARK_CNT; k++) {
+          if (idxPtr >= indices.length) break;
+          const headIdx = indices[idxPtr++];
+          const trailIndices = [];
+          for(let t=0; t<TRAIL_LEN; t++) {
+              if (idxPtr < indices.length) trailIndices.push(indices[idxPtr++]);
+          }
+          
+          sparks.push({ headIdx, trailIndices });
+          
+          // Init physics
+          const curr = currentPositionsRef.current!;
+          const drifts = driftRef.current!; 
+          const cols = geometryRef.current!.attributes.color.array as Float32Array;
+          
+          // Velocity (Head only need vel, trail follows)
+          const speed = 0.03 + Math.random() * 0.05;
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.random() * Math.PI;
+          
+          const vx = speed * Math.sin(phi) * Math.cos(theta);
+          const vy = speed * Math.sin(phi) * Math.sin(theta);
+          const vz = speed * Math.cos(phi);
+
+          // Setup Head
+          const h3 = headIdx * 3;
+          curr[h3] = position.x; 
+          curr[h3+1] = position.y; 
+          curr[h3+2] = position.z;
+          
+          drifts[h3] = vx; drifts[h3+1] = vy; drifts[h3+2] = vz;
+          cols[h3] = 1; cols[h3+1] = 1; cols[h3+2] = 1; // Spark is bright white
+          
+          // Setup Trail (collapsed to start)
+          trailIndices.forEach(ti => {
+              const t3 = ti * 3;
+              curr[t3] = position.x;
+              curr[t3+1] = position.y;
+              curr[t3+2] = position.z;
+              cols[t3] = 0; cols[t3+1] = 0; cols[t3+2] = 0; // Invisible start
+          });
+      }
+
+      fireworksRef.current.push({
+          id: fwId,
+          age: 0,
+          color: baseColor,
+          sparks
+      });
+      if (geometryRef.current) {
+          geometryRef.current.attributes.color.needsUpdate = true;
+      }
+  };
 
   const addLog = (msg: string) => {
     const d = new Date();
@@ -134,6 +232,29 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
     const ms = Math.floor(d.getMilliseconds() / 10).toString().padStart(2, '0');
     logsRef.current.unshift(`[${time}.${ms}] ${msg}`);
     if (logsRef.current.length > 20) logsRef.current.pop();
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      pointerRef.current.set(x, y);
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+      if (!cameraRef.current) return;
+      
+      // Update raycaster
+      raycasterRef.current.setFromCamera(pointerRef.current, cameraRef.current);
+      const target = new THREE.Vector3();
+      // Raycast against infinite plane at Z=0
+      raycasterRef.current.ray.intersectPlane(planeRef.current, target);
+      
+      if (target) {
+          spawnFirework(target);
+          addLog("MOUSE: CLICK BURST");
+      }
   };
 
   useEffect(() => {
@@ -309,22 +430,53 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
       const col1 = new THREE.Color("#4B0082"); // Indigo
       const col2 = new THREE.Color("#00FFFF"); // Cyan
       const col3 = new THREE.Color("#FFFFFF"); // White
+      const colStar = new THREE.Color("#E0E0FF"); // Pale Blue-White for stars
 
       for (let i = 0; i < PARTICLE_COUNT; i++) {
           const ix = i * 3;
-          const armIndex = i % 3;
-          const r = Math.pow(Math.random(), 0.5) * 8; 
-          const spin = 3.0; 
-          const angle = r * spin + (armIndex * (Math.PI * 2 / 3)) + Math.random() * 0.5;
-          const x = r * Math.cos(angle);
-          const z = r * Math.sin(angle);
-          const y = Math.sin(r * 1.5) * 0.5 * Math.exp(-r * 0.1) + (Math.random()-0.5)*0.2;
-          positions[ix] = x; positions[ix+1] = y; positions[ix+2] = z;
-          let c = new THREE.Color();
-          if (r < 2) c.copy(col3).lerp(col2, r/2);
-          else c.copy(col2).lerp(col1, (r-2)/6);
-          c.offsetHSL(0, 0, Math.random() * 0.2); 
-          colors[ix] = c.r; colors[ix+1] = c.g; colors[ix+2] = c.b;
+          
+          // Secondary Layer: Twinkling Star Field (~15% of particles)
+          // We pick indices divisible by 7 to scatter them randomly throughout the buffer
+          if (i % 7 === 0) {
+              // Create a halo/ellipsoid of stars around the galaxy
+              const theta = Math.random() * Math.PI * 2;
+              const costheta = Math.random() * 2 - 1;
+              const phi = Math.acos(costheta);
+              // Distribute stars further out: 4.0 to 14.0 radius
+              const r = 4.0 + Math.pow(Math.random(), 1.5) * 10.0; 
+              
+              const x = r * Math.sin(phi) * Math.cos(theta);
+              const y = (r * Math.sin(phi) * Math.sin(theta)) * 0.4; // Flattened Y plane
+              const z = r * Math.cos(phi);
+              
+              positions[ix] = x; positions[ix+1] = y; positions[ix+2] = z;
+              
+              // Color variation for stars
+              const starType = Math.random();
+              if (starType > 0.95) {
+                 colors[ix] = 1.0; colors[ix+1] = 0.8; colors[ix+2] = 0.4; // Gold/Yellow star
+              } else if (starType > 0.85) {
+                 colors[ix] = 0.6; colors[ix+1] = 0.8; colors[ix+2] = 1.0; // Blue star
+              } else {
+                 colors[ix] = colStar.r; colors[ix+1] = colStar.g; colors[ix+2] = colStar.b;
+              }
+          } else {
+              // Main Galaxy Spiral Arms
+              const armIndex = i % 3;
+              const r = Math.pow(Math.random(), 0.5) * 8; 
+              const spin = 3.0; 
+              const angle = r * spin + (armIndex * (Math.PI * 2 / 3)) + Math.random() * 0.5;
+              const x = r * Math.cos(angle);
+              const z = r * Math.sin(angle);
+              const y = Math.sin(r * 1.5) * 0.5 * Math.exp(-r * 0.1) + (Math.random()-0.5)*0.2;
+              positions[ix] = x; positions[ix+1] = y; positions[ix+2] = z;
+              
+              let c = new THREE.Color();
+              if (r < 2) c.copy(col3).lerp(col2, r/2);
+              else c.copy(col2).lerp(col1, (r-2)/6);
+              c.offsetHSL(0, 0, Math.random() * 0.2); 
+              colors[ix] = c.r; colors[ix+1] = c.g; colors[ix+2] = c.b;
+          }
       }
       return { positions, colors };
   };
@@ -490,6 +642,7 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
       blending: THREE.AdditiveBlending, 
       depthWrite: false,
     });
+    materialRef.current = material;
 
     const group = new THREE.Group();
     const points = new THREE.Points(geometry, material);
@@ -596,36 +749,9 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
 
                 if (dist < 0.04) {
                     rightHandPinching = true;
-                    if (timeNow - lastFireworkTimeRef.current > 200) {
+                    if (timeNow - lastFireworkTimeRef.current > 250) {
                         lastFireworkTimeRef.current = timeNow;
-                        const fwId = Date.now();
-                        const particleIndices = [];
-                        for(let k=0; k<150; k++) {
-                            const pIdx = Math.floor(Math.random() * FIREWORK_PARTICLES_COUNT) + FIREWORK_PARTICLES_START;
-                            particleIndices.push(pIdx);
-                        }
-                        const color = new THREE.Color().setHSL(Math.random(), 1.0, 0.6);
-                        fireworksRef.current.push({
-                            id: fwId,
-                            x: rightHandPos.x, y: rightHandPos.y, z: rightHandPos.z,
-                            age: 0,
-                            color,
-                            indices: particleIndices
-                        });
-                        const curr = currentPositionsRef.current!;
-                        const drifts = driftRef.current!; 
-                        const cols = geometryRef.current!.attributes.color.array as Float32Array;
-                        particleIndices.forEach(idx => {
-                            const i3 = idx * 3;
-                            curr[i3] = rightHandPos.x;
-                            curr[i3+1] = rightHandPos.y;
-                            curr[i3+2] = rightHandPos.z;
-                            drifts[i3] = (Math.random()-0.5) * 0.15;
-                            drifts[i3+1] = (Math.random()-0.5) * 0.15;
-                            drifts[i3+2] = (Math.random()-0.5) * 0.15;
-                            cols[i3] = color.r; cols[i3+1] = color.g; cols[i3+2] = color.b;
-                        });
-                        geometryRef.current!.attributes.color.needsUpdate = true;
+                        spawnFirework(rightHandPos);
                     }
                 }
 
@@ -777,7 +903,14 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
              groupRef.current!.rotation.z *= 0.95; 
          }
 
-         // 4. Particle Update
+         // 4. Update Mouse Position in 3D
+         // This translates the 2D mouse coords into a 3D point on the Z=0 plane
+         if (cameraRef.current) {
+             raycasterRef.current.setFromCamera(pointerRef.current, cameraRef.current);
+             raycasterRef.current.ray.intersectPlane(planeRef.current, mouseWorldPosRef.current);
+         }
+
+         // 5. Particle Update
          const curr = currentPositionsRef.current;
          const lotusPos = lotusPositionsRef.current!;
          const galPos = galaxyPositionsRef.current!;
@@ -792,23 +925,69 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
 
          const activeFireworkIndices = new Set<number>();
          
+         // FIREWORKS UPDATE (With Trails)
          fireworksRef.current = fireworksRef.current.filter(fw => {
              fw.age++;
-             const gravity = 0.005;
+             const gravity = 0.004;
              const drag = 0.96;
-             fw.indices.forEach(idx => {
-                 activeFireworkIndices.add(idx);
-                 const i3 = idx * 3;
-                 drifts[i3+1] -= gravity; 
-                 drifts[i3] *= drag; drifts[i3+1] *= drag; drifts[i3+2] *= drag;
-                 curr[i3] += drifts[i3]; curr[i3+1] += drifts[i3+1]; curr[i3+2] += drifts[i3+2];
-                 if (Math.random() > 0.9) {
-                     currCol[i3] = 1; currCol[i3+1] = 1; currCol[i3+2] = 1; 
-                 } else {
-                     currCol[i3] = fw.color.r; currCol[i3+1] = fw.color.g; currCol[i3+2] = fw.color.b;
+             const trailFadeRate = 0.92; // How fast trails fade
+
+             fw.sparks.forEach(spark => {
+                 const headI = spark.headIdx * 3;
+                 // Mark as active so main loop doesn't overwrite
+                 activeFireworkIndices.add(spark.headIdx);
+                 spark.trailIndices.forEach(ti => activeFireworkIndices.add(ti));
+                 
+                 // 1. Capture previous Head Pos for trail leader
+                 const prevHX = curr[headI];
+                 const prevHY = curr[headI+1];
+                 const prevHZ = curr[headI+2];
+
+                 // 2. Physics for Head
+                 drifts[headI+1] -= gravity; 
+                 drifts[headI] *= drag; drifts[headI+1] *= drag; drifts[headI+2] *= drag;
+                 curr[headI] += drifts[headI]; 
+                 curr[headI+1] += drifts[headI+1]; 
+                 curr[headI+2] += drifts[headI+2];
+                 
+                 // Head Color (Fade out slowly)
+                 const lifeRatio = Math.max(0, 1 - fw.age / 90);
+                 currCol[headI] = fw.color.r;
+                 currCol[headI+1] = fw.color.g;
+                 currCol[headI+2] = fw.color.b; // Keep head bright
+
+                 // 3. Propagate Trail (Snake)
+                 for(let t = spark.trailIndices.length - 1; t > 0; t--) {
+                     const currT = spark.trailIndices[t] * 3;
+                     const prevT = spark.trailIndices[t-1] * 3;
+                     
+                     // Shift Position
+                     curr[currT] = curr[prevT];
+                     curr[currT+1] = curr[prevT+1];
+                     curr[currT+2] = curr[prevT+2];
+                     
+                     // Color Fade
+                     // Interpolate between head color and invisible
+                     const tRatio = t / spark.trailIndices.length;
+                     const intensity = lifeRatio * (1 - tRatio) * 0.8;
+                     currCol[currT] = fw.color.r * intensity;
+                     currCol[currT+1] = fw.color.g * intensity;
+                     currCol[currT+2] = fw.color.b * intensity;
+                 }
+                 
+                 // 4. Connect first trail to Head's old pos
+                 if(spark.trailIndices.length > 0) {
+                     const t0 = spark.trailIndices[0] * 3;
+                     curr[t0] = prevHX;
+                     curr[t0+1] = prevHY;
+                     curr[t0+2] = prevHZ;
+                     currCol[t0] = fw.color.r * lifeRatio * 0.9;
+                     currCol[t0+1] = fw.color.g * lifeRatio * 0.9;
+                     currCol[t0+2] = fw.color.b * lifeRatio * 0.9;
                  }
              });
-             return fw.age < 80; 
+
+             return fw.age < 90; 
          });
 
          const bloomFactor = handFactorRef.current;
@@ -820,6 +999,11 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
          const spin2 = -timeNow * 0.001; // Medium Inner
          const spin3 = timeNow * 0.002;  // Fast Core
 
+         // Mouse Interaction Coords
+         const mx = mouseWorldPosRef.current.x;
+         const my = mouseWorldPosRef.current.y;
+         const mz = mouseWorldPosRef.current.z;
+
          for(let i=0; i<PARTICLE_COUNT; i++) {
              if (activeFireworkIndices.has(i)) continue;
 
@@ -828,7 +1012,7 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
              // Targets
              const lx = lotusPos[ix]; const ly = lotusPos[ix+1]; const lz = lotusPos[ix+2];
              const gx = galPos[ix];   const gy = galPos[ix+1];   const gz = galPos[ix+2];
-             const mx = magPos[ix];   const my = magPos[ix+1];   const mz = magPos[ix+2];
+             const mx_t = magPos[ix]; const my_t = magPos[ix+1]; const mz_t = magPos[ix+2]; // renamed to avoid conflict
 
              // 1. Calculate Intermediate (Lotus -> Galaxy)
              let tx = lx + (gx - lx) * gT;
@@ -855,22 +1039,22 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
 
              // 2. Magic Shield Transform (Spinning logic)
              // We apply spin to the magic target position before lerping
-             let finalMx = mx;
-             let finalMy = my;
-             const finalMz = mz;
+             let finalMx = mx_t;
+             let finalMy = my_t;
+             const finalMz = mz_t;
 
              // Only calculate rotation if Magic is blending in
              if (mT > 0.01) {
-                 const dist = Math.sqrt(mx*mx + my*my);
+                 const dist = Math.sqrt(mx_t*mx_t + my_t*my_t);
                  if (dist > 1.9) { // Outer Decorated Ring
-                    finalMx = mx * Math.cos(spin1) - my * Math.sin(spin1);
-                    finalMy = mx * Math.sin(spin1) + my * Math.cos(spin1);
+                    finalMx = mx_t * Math.cos(spin1) - my_t * Math.sin(spin1);
+                    finalMy = mx_t * Math.sin(spin1) + my_t * Math.cos(spin1);
                  } else if (dist > 1.3 && dist < 1.6) { // Inner Runes
-                    finalMx = mx * Math.cos(spin2) - my * Math.sin(spin2);
-                    finalMy = mx * Math.sin(spin2) + my * Math.cos(spin2);
+                    finalMx = mx_t * Math.cos(spin2) - my_t * Math.sin(spin2);
+                    finalMy = mx_t * Math.sin(spin2) + my_t * Math.cos(spin2);
                  } else if (dist < 1.0) { // Center Core
-                    finalMx = mx * Math.cos(spin3) - my * Math.sin(spin3);
-                    finalMy = mx * Math.sin(spin3) + my * Math.cos(spin3);
+                    finalMx = mx_t * Math.cos(spin3) - my_t * Math.sin(spin3);
+                    finalMy = mx_t * Math.sin(spin3) + my_t * Math.cos(spin3);
                  }
                  // Hexagram (1.6-1.9) doesn't spin or spins very slowly (default 0)
              }
@@ -894,10 +1078,63 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
              g = g + (galCol[ix+1] - g) * gT;
              b = b + (galCol[ix+2] - b) * gT;
 
+             // Twinkle Effect for Galaxy Stars
+             // Only active when Galaxy Mode is dominant
+             if (gT > 0.5 && i % 7 === 0) {
+                 // Calculate a unique twinkle phase based on index
+                 const speed = 0.003 + (i % 10) * 0.0005; 
+                 const phase = i * 0.1;
+                 // Sine wave oscillating between 0.3 and 1.3 intensity
+                 const intensity = 0.8 + 0.5 * Math.sin(timeNow * speed + phase);
+                 
+                 r *= intensity;
+                 g *= intensity;
+                 b *= intensity;
+             }
+
              // To Magic
              r = r + (magCol[ix] - r) * mT;
              g = g + (magCol[ix+1] - g) * mT;
              b = b + (magCol[ix+2] - b) * mT;
+
+             // Magic Pulse/Glow Effect
+             // Adds a breathing golden glow when magic mode is active
+             if (mT > 0.01) {
+                 // Slow breathing pulse
+                 const pulse = Math.sin(timeNow * 0.003) * 0.2 + 0.2; 
+                 // Fast shimmer for "energy" feel
+                 const shimmer = Math.sin(timeNow * 0.01 + ix) * 0.1; 
+                 
+                 const totalGlow = (pulse + shimmer) * mT;
+                 
+                 // Boost colors towards bright gold/white
+                 r += totalGlow;
+                 g += totalGlow * 0.8; // Keep it warm
+                 b += totalGlow * 0.2;
+             }
+             
+             // MOUSE HOVER INTERACTION
+             // Check distance to mouse cursor in world space
+             // We only check 1 in 10 particles to save performance or check all if efficient enough.
+             // Checking all is fine for 180k on modern GPU/CPU but JS is single threaded.
+             // Optimization: Simple Box check first or accept cost.
+             const dx = curr[ix] - mx;
+             const dy = curr[ix+1] - my;
+             const dz = curr[ix+2] - mz;
+             // Distance squared check (avoid sqrt)
+             // Radius 0.4 -> 0.16
+             const distSq = dx*dx + dy*dy + dz*dz;
+             if (distSq < 0.2) {
+                 // Brighten color (Hover Highlight)
+                 r = Math.min(1.0, r + 0.4);
+                 g = Math.min(1.0, g + 0.4);
+                 b = Math.min(1.0, b + 0.4);
+                 
+                 // Jitter Position (Excitement)
+                 curr[ix] += (Math.random()-0.5) * 0.03;
+                 curr[ix+1] += (Math.random()-0.5) * 0.03;
+                 curr[ix+2] += (Math.random()-0.5) * 0.03;
+             }
 
              currCol[ix] = r;
              currCol[ix+1] = g;
@@ -919,7 +1156,7 @@ const ParticleCanvas: React.FC<ParticleCanvasProps> = () => {
     };
   }, []);
 
-  return <div ref={containerRef} className="absolute inset-0 w-full h-full z-10" />;
+  return <div ref={containerRef} onMouseMove={handleMouseMove} onClick={handleClick} className="absolute inset-0 w-full h-full z-10" />;
 };
 
 export default ParticleCanvas;
